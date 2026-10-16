@@ -86,9 +86,6 @@ MCP 做的事，和 **USB-C** 对硬件生态做的事一样：定义统一接�
 ### 1.1 三个角色
 
 MCP 采用 **客户端-宿主-服务器**架构，三个角色分工明确：
-\> 补充说明：这里提到的“最终一致性”是指…… 
-
-<details> <summary>补充说明</summary> 这里是详细的解释，可以写多段、加代码块。 </details>
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -149,74 +146,6 @@ MCP 把服务器能提供的东西归为三类**原语（primitives）**，外�
 
 ### 2.1 Tools：模型控制的函数
 
-#### **第 1 组：Tools（暴露「动作」）—— 最常用**
-
-表格
-
-| 方法                               | 方向 | 作用                                                         |
-| :--------------------------------- | :--- | :----------------------------------------------------------- |
-| `tools/list`                       | C→S  | 「你有什么工具？」返回工具名片数组                           |
-| `tools/call`                       | C→S  | 「执行这个工具。」唯一同时具备 `content` / `isError` / `structuredContent` 的方法 |
-| `notifications/tools/list_changed` | S→C  | 「我的工具清单变了，你重拉一遍」                             |
-
-- `tools/list`：靠 `cursor` 做游标分页，**不要自己做 offset**；字段重点是 `name`（唯一标识，模型匹配的依据）、`description`（模型唯一的决策依据，务必写清约束和失败时怎么改）、`inputSchema`（Draft-07 JSON Schema 对象，不能外链 `$ref`）、`annotations`（`readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`，决定 Host 敢不敢重试、要不要弹安全提示）。
-- `tools/call`：`arguments` **必须是对象**，无参时传 `{}` 而非 `null`；长任务用 `_meta.progressToken` 配合进度通知。
-- `list_changed`：是**失效通知而非增量同步**，只能喊一声「变了」，Host 会重新完整拉一遍 list，因此你的 list 必须能稳定重放。工具集固定就永远别发，白白浪费 token。
-
-#### **第 2 组：Resources（暴露「数据」）—— 只读、可订阅**
-
-| 方法                                   | 方向 | 作用                                                         |
-| :------------------------------------- | :--- | :----------------------------------------------------------- |
-| `resources/list`                       | C→S  | 列出可读资源（文件、日志、报表、行数据…）                    |
-| `resources/read`                       | C→S  | 按 URI 读一份资源。返回 **`contents[]`（复数）**，不是 content，也没有 isError |
-| `resources/templates/list`             | C→S  | 提供 URI 模板（如 `/logs/{date}`）+ 参数 schema              |
-| `resources/subscribe` / `unsubscribe`  | C→S  | 订阅某个 URI                                                 |
-| `notifications/resources/list_changed` | S→C  | 资源清单变了                                                 |
-| `notifications/resources/updated`      | S→C  | 你订阅的那个 URI 内容更新了                                  |
-
-**什么时候选 resources 而不是 tools**：内容**读多写少、有稳定 URI、体积较大、值得被缓存或增量更新**。反之，每次结果依赖参数计算、有副作用，就走 tools。前文提到「base64 大图撑爆 context」，正解就是把文件落盘或上传，改用 `resource` / `resourceLink` 返回 URI。
-
-#### **第 3 组：Prompts（暴露「模板 / 工作流」）**
-
-表格
-
-| 方法                                 | 方向 | 作用                                                         |
-| :----------------------------------- | :--- | :----------------------------------------------------------- |
-| `prompts/list`                       | C→S  | 列出预置提示模板（可带参数定义）                             |
-| `prompts/get`                        | C→S  | 取一个模板，返回 `messages[{role, content}]`，由 Client 拼进上下文 |
-| `notifications/prompts/list_changed` | S→C  | 模板清单变了                                                 |
-
-适用场景：给用户提供**可复用的对话入口**（代码审查模板、SQL 生成模板、角色扮演设定），让其在 UI 里一键选择并填参。若只需一段系统提示，写在工具 description 里即可，不必单独开 prompts。
-
-> 上面三组的结构是刻意对称的：**list / call(or read) / list_changed**。记住这个模式，就不会漏掉「变了要通知」那一半。
-
-#### **第 4 组：服务端主动往外发的（非通知类）**
-
-表格
-
-| 方法                     | 方向 | 作用                | 现状                                                         |
-| :----------------------- | :--- | :------------------ | :----------------------------------------------------------- |
-| `notifications/progress` | S→C  | 长任务进度条        | 请求里带了 `_meta.progressToken` 才能发                      |
-| `logging/setLevel`       | C→S  | Client 设定日志级别 | 级别枚举：debug/info/notice/warning/error/critical/alert/emergency/fatal |
-| `notifications/message`  | S→C  | 推送日志条目        | **协议级日志已走向弃用**，推荐迁移路径：stdio server 直接写 stderr，remote server 走 OpenTelemetry |
-
-#### **第 5 组：Server 反向调用 Client（方向反过来）**
-
-表格
-
-| 方法                               | 什么时候用                                   | 关键字段                                                     |
-| :--------------------------------- | :------------------------------------------- | :----------------------------------------------------------- |
-| `sampling/createMessage`           | 你自己需要 LLM 智能，但不想自带模型          | params: `messages`、`systemPrompt?`、`modelPreferences?`、`maxTokens`、`temperature`、`includeContext?`；result 拿模型回复 |
-| `elicitation/create`               | 涉及花钱、删数据、授权等**必须用户点头**的事 | params: `message`、`requestedSchema`；result: `action: accept/decline/cancel` + params。**别自作主张，也别指望模型替用户同意** |
-| `roots/list`                       | 想知道能访问用户的哪些目录/项目              | result: `roots[{uri, name}]`；拿到合法路径后再读写，别硬编码 |
-| `notifications/roots/list_changed` | 根目录变了通知 Server                        | 无 params                                                    |
-
-判断口诀：**要智能 → sampling；要授权 → elicitation；要文件路径 → roots。**
-
-#### **第 6 组：辅助能力**
-
-`completion/complete` —— UI 输入框里的**自动补全**（补全资源 URI、prompt 参数）。params 里 `ref` 指向哪个 resource/prompt 的哪个参数、`argument:{name,value}` 是当前已输入值；result 回 `completion:{values:[], total?, hasMore?}`。纯体验优化，不做也行。
-
 服务器声明 `tools` 能力后，客户端可以 `tools/list` 发现工具、`tools/call` 调用工具。工具定义的要点：
 
 ```json
@@ -237,57 +166,9 @@ MCP 把服务器能提供的东西归为三类**原语（primitives）**，外�
 }
 ```
 
-**字段说明**：
-
-| 字段 | 作用与含义 |
-|------|-----------|
-| `name` | 工具的唯一标识符（1~128 字符，`[A-Za-z0-9_.-]`，服务器内唯一）。模型发起调用时指名要的就是它 |
-| `title` | 给**人**看的显示名（工具列表、悬停标题用），模型决策时不依赖它 |
-| `description` | 工具功能的自然语言描述。**工具描述即提示词**：模型靠 `name + description + inputSchema` 判断何时调用、怎么传参，写得敷衍模型就会选错 |
-| `inputSchema` | 入参的 JSON Schema（默认方言 2020-12）。模型据此知道"该传什么"，宿主据此校验参数合法性 |
-| `inputSchema.type` | 根节点固定为 `"object"`：参数以键值对（命名参数）传入 |
-| `inputSchema.properties` | 参数清单，键为参数名；每个值是该参数自己的 schema——`type` 约束类型，`description` 告诉模型这个参数填什么（如"城市名或邮编"） |
-| `inputSchema.required` | 代表必填参数名单；缺失即校验失败。内容是properties的子集，没有写在里面的properties参数名，说明这个参数可以省略 |
-| `outputSchema` | 出参的 JSON Schema。声明后工具结果会附带符合该 schema 的 `structuredContent`，客户端可以机读、可以校验 |
-| `outputSchema.properties` | 输出字段定义：`temperature`（number，气温）、`conditions`（string，天气状况） |
-| `annotations` | 行为标注集合：`readOnlyHint: true` 提示客户端"只读、无副作用"，可用来免弹确认框；同类还有 `destructiveHint`、`idempotentHint`、`openWorldHint`。注意标注是**不可信输入**，只用于优化交互，不是安全保证 |
-
-| type 值 | 对应 JSON | 对应 Python 标注 | 说明                                       | 常用约束关键字                                               |
-| ------- | --------- | ---------------- | ------------------------------------------ | ------------------------------------------------------------ |
-| string  | 字符串    | str              | 最常用，地址、名称、路径都是它             | minLength / maxLength、pattern（正则）、format（date-time、uri、email…） |
-| number  | 数字      | float            | 任意数值（含小数）                         | minimum / maximum、exclusiveMinimum / exclusiveMaximum、multipleOf |
-| integer | 整数      | int              | 没有小数部分的数                           | 同上                                                         |
-| boolean | 布尔      | bool             | true / false                               | 无专门约束，常用 enum: [true, false] 或 default              |
-| array   | 数组      | list[X]          | 有序列表，元素类型用 items 声明            | items（元素 schema）、minItems / maxItems、uniqueItems       |
-| object  | 对象      | dict             | 键值对，子字段用 properties 声明           | properties、required、additionalProperties                   |
-| null    | null      | None             | 空值。单独用没意义，一般放进数组表示"可空" | —                                                            |
-
-### **ToolAnnotations：5 个字段**
-
-| 字段              | 类型    | 默认值 | 含义                                                         | 典型填法                                                     |
-| ----------------- | ------- | ------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `title`           | string  | 无     | 给人看的人类可读标题，UI 上显示用（name 是给机器匹配的，可能带下划线或前缀） | `"天气查询"`、`"反编译函数"`                                 |
-| `readOnlyHint`    | boolean | false  | 该工具是否不修改环境（只读/查询/搜索）                       | 纯查询标 `true`；只要会写东西就标 `false`                    |
-| `destructiveHint` | boolean | true   | 是否会做破坏性变更（删除、覆盖、不可逆）                     | 删除/覆盖标 `true`；只新增、追加标 `false`                   |
-| `idempotentHint`  | boolean | false  | 同参数重复调用是否没有额外副作用                             | 幂等（查、upsert、set）标 `true`；累加、追加、发通知标 `false` |
-| `openWorldHint`   | boolean | true   | 是否与外部开放世界交互（结果可能被外部改变、不在你掌控中）   | 调公网 API、搜网页标 `true`；操作本地封闭系统标 `false`      |
-
 - **inputSchema / outputSchema**：JSON Schema（默认方言 2020-12），描述入参/出参结构。模型主要靠 `name + description + inputSchema` 决定何时调用、怎么传参——**工具描述就是提示词的一部分**。
 - **annotations（行为标注）**：如 `readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`。注意规范的态度：标注是**不可信输入**（除非来自可信服务器），客户端可用来决定是否弹确认框，但不能当作安全保证。
 - **content（内容块）**：工具返回非结构化内容，支持五种块：`text`、`image`、`audio`、`resource_link`（资源链接）、`resource`（内嵌资源）。
-
-```json
-"content": [
-  {"type": "text",     "text": "除数不能为 0"},
-  {"type": "image",    "data": "iVBOR...", "mimeType": "image/png"},
-  {"type": "audio",    "data": "...",     "mimeType": "audio/wav"},
-  {"type": "resource", "resource": {...}},
-  {"type": "resourceLink", "uri": "file://...", "name": "report.csv"}
-]
-```
-
-
-
 - **structuredContent**：结构化输出，需符合 outputSchema；规范建议同时附一份序列化文本，兼容旧客户端。
 - **两类错误**（重要，直接影响模型体验）：
   - **协议级错误**：工具不存在、请求结构非法 → JSON-RPC `error`。模型较难自行恢复。
@@ -365,19 +246,6 @@ MCP 对 JSON-RPC 的约束：id **不允许为 null**；未决请求之间 id �
 }
 ```
 
-**字段说明**：
-
-| 字段 | 作用与含义 |
-|------|-----------|
-| `jsonrpc` | 协议版本标记，固定 `"2.0"`（所有消息都是 JSON-RPC 2.0） |
-| `id` | 请求标识，服务器响应时**原样带回**，客户端靠它把响应与请求配对；带 `id` 的消息才需要响应 |
-| `method` | 要调用的方法名。`server/discover` 是 2026-07-28 新增的能力预查询，所有服务器必须实现 |
-| `params._meta` | 随请求携带的协议元数据——无状态化的载体，每个请求自带版本与身份（详见 3.3） |
-| `_meta."io.modelcontextprotocol/protocolVersion"` | 本次请求使用的 MCP 协议版本；服务器不支持时回 `-32022 UnsupportedProtocolVersion` |
-| `_meta."io.modelcontextprotocol/clientCapabilities"` | 客户端能力声明（支持 elicitation、启用了哪些扩展等），服务器据此决定能启用哪些特性。缺必填 `_meta` 字段会被 `-32602` 拒绝 |
-
-> 键名前缀 `io.modelcontextprotocol/` 是官方保留前缀；第三方自定义元数据须用反 DNS 前缀（如 `com.example/`），见 3.3。
-
 ```json
 {
   "jsonrpc": "2.0", "id": "discover-1",
@@ -390,18 +258,6 @@ MCP 对 JSON-RPC 的约束：id **不允许为 null**；未决请求之间 id �
   }
 }
 ```
-
-**字段说明**：
-
-| 字段 | 作用与含义 |
-|------|-----------|
-| `jsonrpc` / `id` | 同请求侧；`id` 原样带回，完成请求-响应配对 |
-| `result` | 成功时的结果载荷（失败则是 `error`，二者互斥） |
-| `result.resultType` | **多态结果标记**：`complete` = 请求已完成，`result` 里就是最终内容（缺失时按 complete 兼容旧服务器）；`input_required` = 服务器中途需要输入（MRTR 流程，见 3.6）；扩展可定义新值（如 Tasks 的 `"task"`），客户端不认识的必须视为非法 |
-| `result.supportedVersions` | 服务器支持的 MCP 协议版本列表，客户端从中选定后续通信使用的版本 |
-| `result.capabilities` | 服务器能力清单：出现 `"tools": {}` 表示支持工具原语、`"resources": {}` 表示支持资源原语；不支持的原语整个键不出现。空对象表示"支持，无子选项" |
-| `result.instructions` | 服务器写给 LLM 的自然语言使用说明（"怎么正确使用我"），宿主通常把它并入系统提示词 |
-| `result._meta."io.modelcontextprotocol/serverInfo"` | 服务器自报身份：`name` 服务器名、`version` 版本号，供客户端展示与日志排查 |
 
 `instructions` 字段很实用：服务器用自然语言告诉 LLM「怎么正确使用我」，宿主通常会把它并进系统提示词。此外 `server/discover` 还兼任 stdio 上的「新旧版本探针」（见 3.5 和 4.2）。
 
@@ -528,20 +384,17 @@ stdio 的规范细节（第 3 章的协议在此之上的传输绑定）：
    ```json
    "command": "E:\\Demo\\ZCode\\MD5\\MCP\\.venv\\Scripts\\python.exe"
    ```
-   字段 `command`：宿主拉起服务器子进程所用的可执行程序路径——指向 venv 里的解释器，保证用对 Python 及其装好的依赖。
    （Windows 上 JSON 的反斜杠要双写转义，也可以统一用正斜杠。）
 2. **uv 项目可以用 `uv run`**：`"command": "uv", "args": ["run", "python", "server.py"]`，uv 会自动准备虚拟环境，省心。
 3. **密钥走 `env`，不进代码**：
    ```json
    "env": { "GITHUB_TOKEN": "ghp_xxx" }
    ```
-   字段 `env`：以键值对形式**追加**给子进程的环境变量；`GITHUB_TOKEN` 是示例键名——服务器代码里用 `os.environ` 读取，密钥因此不写进代码。
    带密钥的配置文件不要提交到 git。
 4. **相对路径要设 `cwd`**：服务器里用相对路径读写文件时，它的工作目录取决于宿主怎么拉起它。显式设置最稳：
    ```json
    "cwd": "E:\\Demo\\ZCode\\MD5\\MCP"
    ```
-   字段 `cwd`：子进程的当前工作目录，服务器内所有相对路径的解析基准；不设则由宿主决定，显式设置最稳。
 5. **Windows 三个经典坑**：
    - JSON 路径反斜杠转义（`\\`）；
    - Node 系服务器（npx/node）在部分宿主里要写 `npx.cmd` 而不是 `npx`；
@@ -579,17 +432,8 @@ stdio 的规范细节（第 3 章的协议在此之上的传输绑定）：
 }
 ```
 
-**字段说明**：
-
-| 字段 | 作用与含义 |
-|------|-----------|
-| `mcpServers` | Claude 系宿主的固定顶层键；其下每个键是一台要连接的 MCP 服务器（VS Code 的变体叫 `servers`，见下） |
-| `"note-demo"` / `"raw-server"` | 服务器在本宿主内的**别名**，自己起，仅用于界面展示与日志，与服务器自报的 serverInfo 无关；连几台就写几个键 |
-| `command` | 启动服务器的可执行程序。stdio 方式下宿主把它作为**子进程**拉起，经 stdin/stdout 交换 JSON-RPC（见 4.1/4.2）；建议写绝对路径（见 4.3 第 1 条） |
-| `args` | 传给 `command` 的参数数组，这里是要运行的服务器脚本路径 |
-| `env` | 追加给子进程的环境变量，密钥放这里不放代码（见 4.3 第 3 条）；`{}` 表示不追加 |
-| `cwd` | 子进程的工作目录，服务器内相对路径的解析基准（见 4.3 第 4 条）；省略则由宿主决定 |
-
+- `command` + `args`：stdio 方式，宿主负责拉起子进程；
+- `env` / `cwd`：可选，见 4.3；
 - **保存后必须完全退出 Claude Desktop 再重启**（包括托盘/后台），只关窗口不生效；
 - 生效后对话里会出现工具图标（锤子/插头），点击可查看该服务器暴露的工具；首次调用高危工具会弹批准框；
 - 排错日志在 `%APPDATA%\Claude\logs\` 下的 `mcp*.log`。
@@ -613,15 +457,7 @@ stdio 的规范细节（第 3 章的协议在此之上的传输绑定）：
     }
   }
   ```
-
-  **字段说明**：
-
-  | 字段 | 作用与含义 |
-  |------|-----------|
-  | `servers` | VS Code 的顶层键（对应 Claude 系的 `mcpServers`） |
-  | `"note-demo"` | 服务器在本宿主内的别名，同上例 |
-  | `type` | 传输类型，`stdio` = 本地子进程。VS Code 要求显式声明；Claude 系配置没有此字段，默认即 stdio |
-  | `command` / `args` | 同 Claude 配置：拉起子进程的程序与参数；`env` / `cwd` 在 VS Code 配置里同样可用 |
+- 注意 VS Code 用的是 `servers` 键 + `type: "stdio"`，与 Claude 系的 `mcpServers` 不同。
 
 #### Cline / Zed 等
 
@@ -870,38 +706,3 @@ MCP 服务器 = **任意代码执行 + 数据访问**，规范把安全列为实
 | `fastmcp_demo.py` | 官方 SDK FastMCP 版同功能服务器（需 `pip install mcp`） |
 
 > 协议细节以官方规范为准。本文基于 2026-07-28 版撰写；该版本变化很大，阅读 2025 年的教程时请注意「握手式连接 vs 无状态请求」「服务器主动请求 vs MRTR」「GET 流/会话 vs 单一端点」三处时代差异。
-
-
-
-
-
-
-
-### 术语 
-
-<details>
-<summary>实现方式</summary> if redis.exists(request_id):
-        return cached_response
-</details>
-
-<details>
-<summary>幂等性</summary>
-<p>指同一个操作执行一次和执行多次，产生的结果一致。</p>
-<pre><code class="language-python">if redis.exists(request_id):
-    return cached_response</code></pre>
-</details>
-
-<details>
-<summary><strong>前端相关术语</strong></summary>
-
-<details>
-<summary><strong>SSR</strong></summary>
-<p>服务端渲染，页面在服务器上生成 HTML 后返回。</p>
-</details>
-
-<details>
-<summary><strong>CSR</strong></summary>
-<p>客户端渲染，浏览器下载 JS 后再渲染页面。</p>
-</details>
-
-</details>

@@ -1,0 +1,190 @@
+/* ============================================================
+   lesson.css — Rust-Driver 教学工作区共享样式表
+   所有 lessons/*.html 通过 <link rel="stylesheet" href="../assets/lesson.css"> 引入。
+   设计目标：Tufte 风格（正文优先、低装饰）、屏幕与打印双优、深色模式自适应。
+   ============================================================ */
+
+/* ---------- 主题变量 ---------- */
+:root {
+  --bg: #fffff8;            /* 暖白底，仿纸张 */
+  --ink: #1a1a1a;           /* 正文墨色 */
+  --ink-soft: #555;         /* 次级文字 */
+  --accent: #8a4b08;        /* 赭石色强调，仿 Tufte */
+  --accent-soft: #f5ead9;   /* 强调底色 */
+  --line: #e4e0d4;          /* 分隔线 */
+  --code-bg: #f6f4ec;       /* 代码块底 */
+  --ok: #2e6b34;            /* 正确反馈绿 */
+  --err: #a02c2c;           /* 错误反馈红 */
+  --card-bg: #fffdf6;       /* 卡片底 */
+  --max-width: 44rem;       /* 正文栏宽：一行 60-75 字符的最佳阅读宽度 */
+}
+
+/* 深色模式：跟随系统设置，无需 JS */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16161a;
+    --ink: #e8e6df;
+    --ink-soft: #a8a49a;
+    --accent: #e0a458;
+    --accent-soft: #2e2718;
+    --line: #33322e;
+    --code-bg: #201f1c;
+    --ok: #7fc47f;
+    --err: #e07a7a;
+    --card-bg: #1e1e22;
+  }
+}
+
+/* ---------- 基础排版 ---------- */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  max-width: var(--max-width);
+  padding: 2.5rem 1.25rem 4rem;
+  background: var(--bg);
+  color: var(--ink);
+  /* 中文优先的系统字体栈；代码用等宽栈 */
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+h1, h2, h3, h4 {
+  line-height: 1.3;
+  font-weight: 650;
+  margin: 2rem 0 0.75rem;
+}
+h1 { font-size: 1.7rem; }
+h2 {
+  font-size: 1.3rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.25rem;
+}
+h3 { font-size: 1.08rem; }
+p { margin: 0.85rem 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+small, .meta { color: var(--ink-soft); font-size: 0.88rem; }
+
+/* 课号与元信息条 */
+.lesson-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.2rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  margin-bottom: 1.6rem;
+  background: var(--card-bg);
+}
+
+/* ---------- 提示框 ---------- */
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 0.7rem 1rem;
+  margin: 1.2rem 0;
+  border-radius: 0 6px 6px 0;
+}
+.callout.teacher {
+  border-left-color: var(--ok);
+}
+.callout.warn {
+  border-left-color: var(--err);
+}
+
+/* ---------- 代码 ---------- */
+code {
+  font-family: "Cascadia Code", "Consolas", "SF Mono", monospace;
+  font-size: 0.92em;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+pre code { background: none; padding: 0; font-size: 0.86rem; }
+
+/* 代码块里的"行内小注"（语法糖的原始写法对照等） */
+pre .note { color: var(--ok); }
+pre .bad { color: var(--err); }
+
+/* ---------- 表格 ---------- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.2rem 0;
+  font-size: 0.95rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: var(--accent-soft); }
+
+/* ---------- 互动练习组件 ---------- */
+.quiz {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.1rem 1.2rem;
+  margin: 1.6rem 0;
+}
+.quiz h3 { margin-top: 0; }
+.quiz-code {
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.86rem;
+  white-space: pre-wrap;
+  margin: 0.6rem 0;
+}
+.quiz-options { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.7rem 0; }
+.quiz-options button {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.35rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.quiz-options button:hover:not(:disabled) { border-color: var(--accent); }
+.quiz-options button:disabled { cursor: default; opacity: 0.75; }
+.quiz-options button.correct { border-color: var(--ok); background: var(--accent-soft); }
+.quiz-options button.wrong { border-color: var(--err); }
+.quiz-feedback { font-size: 0.95rem; margin: 0.4rem 0 0; min-height: 1.5em; }
+.quiz-feedback.ok { color: var(--ok); }
+.quiz-feedback.err { color: var(--err); }
+.quiz-score { font-size: 0.9rem; color: var(--ink-soft); margin-top: 0.8rem; }
+
+/* ---------- 页脚导航 ---------- */
+.lesson-nav {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.92rem;
+}
+
+/* ---------- 打印 ---------- */
+@media print {
+  body { max-width: none; padding: 0; font-size: 11.5pt; }
+  .quiz-options { display: none; }   /* 打印时不输出按钮 */
+  .quiz-feedback { display: none; }
+  a { color: var(--ink); }
+}

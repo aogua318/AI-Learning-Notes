@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>术语表 — Rust-Driver 教学工作区</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+<style>
+  /* 术语表专属样式：定义用正文，"避免"用弱化小字 */
+  .term { margin: 1.1rem 0; }
+  .term dt { font-weight: 650; font-size: 1.02rem; }
+  .term dd { margin: 0.15rem 0 0; }
+  .avoid { color: var(--ink-soft); font-size: 0.86rem; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>术语表</h1>
+<p class="meta">Rust-Driver 教学工作区的规范用语。所有课程、练习、学习记录必须使用这里的词，不用别名。<br>
+只收录<b>已经理解</b>的概念——理解中的词先在课程里定义，练会了再晋升到这里。</p>
+
+<p><a href="../MISSION.md">← 返回 MISSION.md</a></p>
+
+<h2>嵌入式与硬件</h2>
+
+<dl class="term">
+  <dt>固件（firmware）</dt>
+  <dd>烧写在 MCU 内部 Flash 中、上电即运行的程序；没有操作系统，你的代码就是全部。</dd>
+  <dd class="avoid">避免：单片机程序、裸机代码</dd>
+</dl>
+
+<dl class="term">
+  <dt>MCU（微控制器）</dt>
+  <dd>把 CPU、内存、外设集成在一颗芯片上的微型计算机，本项目指 Raspberry Pi Pico 上的 RP2040。</dd>
+  <dd class="avoid">避免：单片机、芯片（单独用时指代不明）</dd>
+</dl>
+
+<dl class="term">
+  <dt>HAL（硬件抽象层）</dt>
+  <dd>把寄存器操作包装成安全函数库的中间层；本项目用 rp2040-hal，它是 embedded-hal traits 在 RP2040 上的实现。</dd>
+  <dd class="avoid">避免：库、驱动（HAL 不是内核驱动）</dd>
+</dl>
+
+<dl class="term">
+  <dt>USB HID（人机接口设备类）</dt>
+  <dd>USB 的设备类标准，键盘、鼠标、游戏摇杆都属此类；操作系统自带通用驱动，设备只需按规范上报数据。</dd>
+  <dd class="avoid">避免：USB 协议（HID 是 USB 之上的一个类规范）</dd>
+</dl>
+
+<dl class="term">
+  <dt>UF2 烧录</dt>
+  <dd>把 Pico 按住 BOOTSEL 插 USB，让它以 U 盘形式出现，把 .uf2 文件拖进去即完成烧录的方式。</dd>
+  <dd class="avoid">避免：刷机、拷程序</dd>
+</dl>
+
+<dl class="term">
+  <dt>through-hole（直插元件）</dt>
+  <dd>引脚穿过电路板过孔再焊接的元件形态；按键、排针、杜邦线都是，入门焊接只练这种。</dd>
+  <dd class="avoid">避免：插件、THT（中文语境不常用英文缩写）</dd>
+</dl>
+
+<h2>工具链</h2>
+
+<dl class="term">
+  <dt>rustup</dt>
+  <dd>Rust 官方工具链管理器，负责安装和切换 Rust 编译器与交叉编译目标。</dd>
+  <dd class="avoid">避免：Rust 安装包（Rust 没有传统意义上的"安装包"）</dd>
+</dl>
+
+<dl class="term">
+  <dt>thumbv6m-none-eabi</dt>
+  <dd>RP2040 的 Cortex-M0+ 核心对应的交叉编译目标名；编译固件时 <code>cargo build --target thumbv6m-none-eabi</code> 的 target 就是它。</dd>
+  <dd class="avoid">避免：ARM 编译、裸机目标（指代模糊）</dd>
+</dl>
+
+<dl class="term">
+  <dt>no_std</dt>
+  <dd>不依赖标准库、只依赖 core 的运行环境；固件和 eBPF 程序都活在里面，没有堆分配器和文件系统。</dd>
+  <dd class="avoid">避免：无库、裸 Rust</dd>
+</dl>
+
+<dl class="term">
+  <dt>CO-RE（Compile Once, Run Everywhere）</dt>
+  <dd>eBPF 的一次编译、多内核版本运行的机制；aya 库支持，第二阶段接触。</dd>
+  <dd class="avoid">避免：一次编译到处运行（字面直译，不用于术语）</dd>
+</dl>
+
+<hr>
+<p class="meta">所有权 / 移动 / 借用 / 生命周期 / Drop 等 Rust 语言术语，将在第一课练习完成后晋升至此。<br>
+术语有争议或想改定义，直接告诉我——这份表的措辞以你用得顺手为准。</p>
+
+</body>
+</html>

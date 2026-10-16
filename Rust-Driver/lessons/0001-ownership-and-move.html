@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第一课：所有权与 move 语义 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0001</span>
+  <span>预计 15–20 分钟</span>
+  <span>前置：C 语言基础</span>
+  <span>阶段：语言预备期（第 1 课 / 共 4 周）</span>
+</div>
+
+<h1>第一课：所有权——Rust 给驱动开发者的见面礼</h1>
+
+<div class="callout teacher">
+  <b>老师的话：</b>这是语言预备期的第一课。为什么从所有权开始？因为 Rust 的语法你八九成能从 C 和 Python 平移过来，<b>所有权是唯一一件你从没见过的新东西</b>。它也是整个 Rust 的地基——借用检查器、生命周期、智能指针，全部长在它上面。这一课只讲一件事：值从一个变量到另一个变量，到底发生了什么。
+</div>
+
+<h2>1. 为什么写驱动的人必须过这关</h2>
+
+<p>你有 C 背景，先对照你熟悉的三个现场：</p>
+
+<table>
+  <tr><th>你的现场</th><th>C 的做法</th><th>Rust 的做法</th></tr>
+  <tr>
+    <td>写固件（no_std，没有垃圾回收，常常连堆分配都没有）</td>
+    <td>手动 malloc/free，或干脆静态数组，靠人的纪律</td>
+    <td>所有权规则由编译器强制检查，违反就不让你编译</td>
+  </tr>
+  <tr>
+    <td>硬件外设（一个引脚只能被一个驱动用）</td>
+    <td>靠代码规范和注释约束，约束不住就是幽灵 bug</td>
+    <td>外设的所有权只能被取走一次，编译器替你独占</td>
+  </tr>
+  <tr>
+    <td>内核代码（double free、use-after-free 是 C 安全漏洞的常客）</td>
+    <td>靠 code review 和测试兜底</td>
+    <td>这两类错误在编译期直接消失</td>
+  </tr>
+</table>
+
+<p>一句话概括：<b>Rust 把内存管理从"人的纪律"变成了"编译器的规则"</b>。而这条规则的全部内容，就是接下来这三条。</p>
+
+<h2>2. 三条规则</h2>
+
+<p>《The Rust Programming Language》第 4 章给出的所有权三规则，原文如下（<a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html" target="_blank">出处链接</a>）：</p>
+
+<div class="callout">
+  1. Each value in Rust has an <b>owner</b>.<br>
+  2. There can only be <b>one owner</b> at a time.<br>
+  3. When the owner goes out of scope, the value will be <b>dropped</b>.
+</div>
+
+<p>翻译过来：每个值有且只有一个主人；主人换人（而不是多一个主人）的过程叫 <b>move</b>；主人离开作用域，值就被自动销毁。注意第二条——"同时只有一个"，这正是它和 C 分道扬镳的地方。</p>
+
+<h2>3. move：所有权的转移</h2>
+
+<p>先看 C 里你会怎么写一段"交接"堆内存的代码：</p>
+
+<pre><code>// C：把堆上传给你的搭档，然后两个人都以为自己是主人
+char *s1 = strdup("hello");
+char *s2 = s1;          // 浅拷贝：s1 和 s2 指向同一块堆内存
+free(s1);               // 搭档 A 释放了
+printf("%s", s2);       // 搭档 B 还在用 —— use-after-free
+// 更糟的版本：s2 最后也 free 一次 —— double free</code></pre>
+
+<p>Rust 的写法：</p>
+
+<pre><code>let s1 = String::from("hello");   // 在堆上分配 "hello"，s1 是它的所有者
+let s2 = s1;                        // move：所有权从 s1 转移给 s2
+// 注意：堆数据一个字节都没动，被复制的只有栈上的"遥控器"三元组
+// （指针、长度、容量）。s1 从此被标记为"已移动"，不再有效。
+
+// println!("{s1}");                 // 编译错误：borrow of moved value: s1
+println!("{s2}");                   // 只有 s2 能用
+
+// 语法糖注释：println!("{s1}") 是 Rust 2021 的内联格式参数写法，
+// 原始等价形式是 println!("{}", s1)。</code></pre>
+
+<p><b>move 防的就是上面 C 代码里的双重灾难</b>：所有权一旦转移，旧变量立即失效，同一块内存不可能有两个"主人"，也就不可能 double free 或 use-after-free。旧变量不是被藏起来了，是编译器彻底不让你碰。</p>
+
+<h2>4. Copy：栈上类型的例外</h2>
+
+<p>如果值整个住在栈上、大小固定（比如一个 <code>i32</code>），"转移所有权"没有意义——直接按位复制一份，两个变量都有效。这类类型实现了 <code>Copy</code> trait：</p>
+
+<pre><code>let x = 5;
+let y = x;                  // i32 实现了 Copy：按位复制，x 依然有效
+println!("{x}, {y}");       // 输出：5, 5
+
+let t = (1, true);          // 元组的所有成员都是 Copy，元组整体才是 Copy
+let u = t;                  // t 依然有效</code></pre>
+
+<p>哪些类型是 <code>Copy</code>？The Book 列出的名单（已核实）：所有整数类型（如 <code>u32</code>）、<code>bool</code>、所有浮点类型（如 <code>f64</code>）、<code>char</code>，以及<b>所有成员都是 Copy 的元组</b>。<code>String</code> 这种堆上类型<b>不是</b> Copy。</p>
+
+<p>还有一条硬规矩（The Book 原文）：一个类型不能同时实现 <code>Copy</code> 和 <code>Drop</code>——因为 Copy 的意思是"赋值时复制一份、原变量照旧有效"，而 Drop 的意思是"作用域结束时自动释放资源"，两者同时成立就会重复释放。</p>
+
+<h2>5. 函数调用也是 move</h2>
+
+<p>move 不只发生在 <code>let</code> 赋值时。把值传给函数、从函数返回，规则完全一样：</p>
+
+<pre><code>fn take_ownership(s: String) {
+    println!("{s}");
+}   // s 在这里离开作用域，值被 drop —— 堆内存在这里释放
+
+fn give_ownership() -&gt; String {
+    String::from("new")      // 这个值的所有权随返回值移交调用者
+}
+
+let s = String::from("hi");
+take_ownership(s);           // move：s 的所有权进了函数
+// println!("{s}");           // 编译错误：s 已经被移走了
+let s2 = give_ownership();   // move：返回值的所有权交给 s2</code></pre>
+
+<p>对比 C：这相当于你传给函数的每一份堆内存都<b>附带一次所有权交割</b>，函数拿不走第二份，你也别想在交出去之后继续用。刚接触会觉得"处处受限于编译器"，但请记住第 1 节那张表：这些限制正在免费消灭一整类内核级漏洞。</p>
+
+<h2>6. 互动练习</h2>
+
+<p>四段代码，判断每段是<b>编译错误</b>还是<b>正常运行</b>。选完立刻有反馈，全部答完看总分。</p>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <div class="quiz-code">let s1 = String::from("hello");
+let s2 = s1;
+println!("{s1}");</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">let x = 5;
+let y = x;
+println!("{x}");</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <div class="quiz-code">fn take(s: String) { }
+
+let s = String::from("hi");
+take(s);
+println!("{s}");</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">let t = (1, String::from("x"));
+let u = t;
+println!("{}", t.0);</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 4</p>
+
+<h2>7. 课后任务</h2>
+
+<ol>
+  <li><b>Rustlings</b>（<a href="https://github.com/rust-lang/rustlings" target="_blank">官方仓库</a>）：完成 <code>move_semantics</code> 系列 6 个练习。装好后运行 <code>rustlings watch</code>，边改边看编译错误——这正是本课说的"编译器当教练"。</li>
+  <li><b>The Book 第 4 章</b>通读一遍，重点看 "Ways Variables and Data Interact: Move" 一节，和本课第 3 节对照。</li>
+  <li>把 <a href="../MISSION.md">MISSION.md</a> 里的 WoL 练手项目排进日程：语言预备期结束前，用它撞第一次真实的所有权编译错误。</li>
+</ol>
+
+<div class="callout teacher">
+  <b>给驱动学习者的伏笔：</b>摇杆固件的第一行代码会长这样——<code>let mut pac = rp2040_pac::Peripherals::take().unwrap();</code>。<code>take()</code> 把全部外设的所有权<b>取走一次</b>，第二次调用只会得到 <code>None</code>。一个物理外设不可能有两个主人——这正是所有权规则在硬件上的样子。到写固件那几课，你会回来感谢今天这一课。
+</div>
+
+<h2>8. 延伸与预告</h2>
+
+<p><b>主要来源</b>（本课知识的第一出处，建议读原文）：<a href="https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html" target="_blank">The Rust Book, Chapter 4.1: What Is Ownership?</a></p>
+<p><b>下一课预告</b>：借用与引用——数据不用"送出去"，可以"借出去"；以及为什么借用检查器允许你同时读、不允许你同时写。</p>
+<p><b>随时提问</b>：这一课有任何地方看不懂、练习做错了不服气、想让我换个方式再讲一遍——直接问。我是你的老师，答疑是课程的一部分，不是打扰。</p>
+
+<div class="lesson-nav">
+  <p>参考：<a href="../reference/glossary.html">术语表</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice="ok" 表示该选项是"正常运行"，
+   data-choice="err" 表示该选项是"编译错误"。
+   ============================================================ */
+
+// 每题配置：correct 是正确选项的 choice 值；
+// okMsg 是答对时的解释，errMsg 是答错时的解释。
+var QUIZ_ANSWERS = [
+  {
+    correct: "err",
+    okMsg: "对。s1 的所有权已 move 给 s2，s1 失效，再打印 s1 就是借用已移动的值。堆数据没动，动的是所有权。",
+    errMsg: "不对。String 是堆上类型，赋值 = move 而非拷贝。s1 已经失效，用它就是编译错误。回到第 3 节再看一遍三元组那段。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。i32 实现了 Copy，赋值时按位复制，x 依然有效。栈上定长类型不走 move 那套。",
+    errMsg: "不对。i32 整个住在栈上、大小固定，实现了 Copy trait，赋值后 x 照样能用。看一眼第 4 节的名单。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。把 s 传给函数就是一次 move，所有权进了函数体；调用之后再打印 s，就是借用已移动的值。",
+    errMsg: "不对。函数传参和 let 赋值遵循同一套 move 规则——s 的所有权已经跟着函数调用交出去了。回到第 5 节。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。元组要整体 move：只要有一个成员不是 Copy（这里是 String），整个元组都转移所有权，t 连 1 都读不到了。",
+    errMsg: "不对。元组的 Copy 是「all or nothing」——String 成员不是 Copy，整个元组一起被 move，t 完全失效。第 4 节讲过这条。"
+  }
+];
+
+// 语法糖注释：箭头函数 (x) => { ... } 的原始写法是 function (x) { ... }。
+// forEach 是数组自带遍历方法，等价于 for (var i = 0; i < arr.length; i++)。
+var answered = { 0: false, 1: false, 2: false, 3: false };  // 记录每题是否已作答
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  // 语法糖注释：quiz.dataset.quiz 读取 HTML 属性 data-quiz 的值；
+  // Number() 把字符串 "0" 转成数字 0（dataset 读出来的一律是字符串）。
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) return;          // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;     // 玩家选了 ok 还是 err
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      // 判定后禁用全部按钮，高亮正误
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        // 把正确选项也标出来，让玩家看到差距
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) b.classList.add("correct");
+        });
+      }
+
+      // 输出反馈（innerHTML 写入元素内容；textContent 更安全但这里文案是我们自己写的）
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      // 语法糖注释：模板字符串 `...${变量}...` 的原始写法是 "..." + 变量 + "..."
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 4";
+
+      if (score === 4) {
+        document.getElementById("score").textContent =
+          "本轮得分：4 / 4 —— 全对。move 这关你过了，下一课见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>
