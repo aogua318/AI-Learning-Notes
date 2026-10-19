@@ -189,6 +189,56 @@ th { background: var(--accent-soft); }
   a { color: var(--ink); }
 }
 
+/* ---------- 可放大图表组件（配合 assets/zoomable-figure.js） ----------
+   用法：figure 加 class="figure-zoom" 和 data-zoomable，内部放一个
+   iframe / svg / img，再加一个 <button class="zoom-badge">。
+   点击徽章或浮层空白处，图表变身为近全屏；Esc 收起。 */
+.figure-zoom {
+  position: relative;
+  cursor: zoom-in;
+}
+.figure-zoom > iframe,
+.figure-zoom > svg,
+.figure-zoom > img { display: block; width: 100%; border: 0; }
+.figure-zoom > iframe { height: 260px; }   /* 宽幅图的默认预览高度 */
+.figure-zoom > svg,
+.figure-zoom > img { height: auto; }
+.figure-zoom .zoom-badge {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  z-index: 2;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.8rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+}
+/* 放大态：图表变身为近全屏浮层（JS 只切这一个 class） */
+.figure-zoom.expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  cursor: zoom-out;
+}
+.figure-zoom.expanded > iframe { flex: 1 1 auto; height: auto; }
+.figure-zoom.expanded > svg,
+.figure-zoom.expanded > img {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 96vw;
+  max-height: 86vh;
+  margin: auto;
+}
+.figure-zoom.expanded .zoom-badge { top: 1rem; right: 1rem; bottom: auto; }
+
 /* ---------- archify 内联图表 ----------
    由图由 archify 渲染（源：assets/ownership-lifecycle.json，交互版：
    assets/ownership-lifecycle.html），SVG 内联进课程保持自包含。

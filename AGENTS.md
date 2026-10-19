@@ -37,6 +37,7 @@
 
 - 动手前先问清楚用户的具体需求；需求不明确时先澄清，不要擅自假设。
 - 编辑代码前，先生成一份说明文档，介绍它的作用以及用途。
+- 教学工作区（`lessons/` 单文件 HTML）里的图表默认启用可放大组件：`figure` 加 `figure-zoom` 类和 `data-zoomable` 属性，组件与样式从 `Rust-Driver/assets/zoomable-figure.js` 及其 lesson.css 复制，完整约定见 SKILLS.md。
 - 处理 JSON、CSV、YAML、Markdown 和 HTML 时，优先使用结构化解析器。
 - 保持命令输出简洁，便于调试。
 - 除非明确需要，否则不要添加网络请求、凭据使用或具有破坏性的文件操作。
