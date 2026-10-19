@@ -26,6 +26,13 @@
 - 该组件已部署到 Japanese-Travel/assets/（两边文件一致），但 Japanese-Travel 的 4 节课暂无 figure/img，脚本尚未被引入——组件已武装待用。
 - 唯一实际使用点：`lessons/0001-ownership-and-move.html` 的所有权生命周期图（内嵌 SVG + archify-figure 样式）。
 
+## 学习进度
+
+- 2026-10-19：rustlings 环境就绪——项目在 `E:\demo\rust\rustlings`（init 生成，含 rust-analyzer.toml），runner 已装（`.cargo/bin/rustlings.exe`），用户已加 PATH，watch 模式正常运行，共 94 题。命令：n 下一题 / h 提示 / l 列表 / c 全量检查 / x 重置 / q 退出。**move_semantics 六题已通过（第一课作业验收）**，用户进度至 05_vecs 之后的分类。
+- 学习记录归档规则（2026-10-19 用户拍板）：**一课一个聚类记录**，文件名对应课号（如 `0001-ownership-move-copy-drop.md`），课内多次追问按时间顺序追加小节，演进痕迹即价值；不再一条记录一个文件。当前仅第一课聚类一份。
+- **学生笔记规则（2026-10-19 用户拍板）**：每课一份学生笔记，放 `my-notes/`，文件名对应课号（如 `my-notes/0001-ownership-and-move.md`）。用户的原始笔记是临时提问、缺逻辑性，由 AI 按主题重组通顺后再落盘；误区处标注"曾误→正解"，未决问题进队列，结尾附自查问题。已发布第一课整理版（覆盖所有权四连问、七条归纳、drop 三连问、编译期机制、rustlings 00~06 十一条）。
+- 学习进度：move_semantics 六题已通过（第一课作业验收），用户进度至 rustlings 06 之后的分类。第二课《借用与引用》已发布（lessons/0002-borrowing-and-references.html）。用户开放问题排队中：const 语义、区间半开理由（第三课）、闭包与迭代器（其后）。
+
 ## 待核实 / 后续事项
 
 - [x] 环境搭建文档已写（setup-rust-windows.md）：rustup + rustlings，含 link.exe 问题的 GNU 工具链解法；第一课课后任务已同步为新版命令（rustlings init / rustlings，旧版 watch 已废弃——官网已核实）

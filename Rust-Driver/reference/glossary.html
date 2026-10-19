@@ -21,6 +21,62 @@
 
 <p><a href="../MISSION.md">← 返回 MISSION.md</a></p>
 
+<h2>Rust 语言核心</h2>
+
+<dl class="term">
+  <dt>所有权（ownership）</dt>
+  <dd>Rust 的核心规则：每个值有且只有一个所有者，由所有者在作用域结束时通过 Drop 清理。</dd>
+  <dd class="avoid">避免：归属权、财产权</dd>
+</dl>
+
+<dl class="term">
+  <dt>所有者（owner）</dt>
+  <dd>持有某个值并承担其 Drop 责任的变量；所有权可以转移（move），但任何时候只有一个。</dd>
+  <dd class="avoid">避免：主人、属主（口语教学可用"主人"，书面一律用"所有者"）</dd>
+</dl>
+
+<dl class="term">
+  <dt>移动（move）</dt>
+  <dd>所有权随赋值或传参转移到新变量，旧变量立即失效；堆数据本身不动，动的是栈上的所有权三元组。</dd>
+  <dd class="avoid">避免：转移、搬运、交接</dd>
+</dl>
+
+<dl class="term">
+  <dt>拷贝（Copy）</dt>
+  <dd>类型实现的标记 trait；赋值时按位复制一份，原变量仍然有效。与 Drop 互斥。</dd>
+  <dd class="avoid">避免：复制（泛指）、clone</dd>
+</dl>
+
+<dl class="term">
+  <dt>销毁（Drop）</dt>
+  <dd>所有者离开作用域时自动执行的清理动作，通常释放堆资源；不能手动调用 .drop()，提前释放用 std::mem::drop。</dd>
+  <dd class="avoid">避免：释放、回收、析构（C++ 语境词）</dd>
+</dl>
+
+<dl class="term">
+  <dt>引用（reference）</dt>
+  <dd>&amp;T / &amp;mut T，不获取所有权的访问凭证；同一时间可存在任意多个 &amp;T，或恰好一个 &amp;mut T。</dd>
+  <dd class="avoid">避免：指针（裸指针 *const / *mut 另有所指，不可混用）</dd>
+</dl>
+
+<dl class="term">
+  <dt>可变绑定（mutable binding）</dt>
+  <dd>用 mut 声明的变量，其值可以被修改；默认绑定不可变。</dd>
+  <dd class="avoid">避免：变量（不修饰时一律指不可变绑定）</dd>
+</dl>
+
+<dl class="term">
+  <dt>遮蔽（shadowing）</dt>
+  <dd>用同名 let 绑定新值，旧绑定被永久覆盖，可顺便更换类型；与"重新赋值"是两回事。</dd>
+  <dd class="avoid">避免：重新赋值、覆盖</dd>
+</dl>
+
+<dl class="term">
+  <dt>尾表达式（tail expression）</dt>
+  <dd>函数体最后一个不带分号的表达式，它的值就是函数的返回值；加分号则变成语句、值被丢弃。</dd>
+  <dd class="avoid">避免：隐式 return、最后一行</dd>
+</dl>
+
 <h2>嵌入式与硬件</h2>
 
 <dl class="term">
@@ -86,7 +142,7 @@
 </dl>
 
 <hr>
-<p class="meta">所有权 / 移动 / 借用 / 生命周期 / Drop 等 Rust 语言术语，将在第一课练习完成后晋升至此。<br>
+<p class="meta">借用（borrowing）/ 可变借用 / 生命周期（lifetime）/ 切片（slice）/ 区间（range）/ 闭包（closure）/ 迭代器（iterator）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
 术语有争议或想改定义，直接告诉我——这份表的措辞以你用得顺手为准。</p>
 
 </body>
