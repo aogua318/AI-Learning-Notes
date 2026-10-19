@@ -1,0 +1,45 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "String 的所有权生命周期",
+    "output": "assets/ownership-lifecycle.html",
+    "animation": "trace",
+    "quality_profile": "showcase"
+  },
+  "mainPath": ["created", "owned_s1", "moved", "owned_s2", "dropped"],
+  "states": [
+    { "id": "created", "type": "start", "label": "堆上诞生", "sublabel": "String::from 分配", "tag": "堆", "step": "01" },
+    { "id": "owned_s1", "type": "active", "label": "s1 所有", "sublabel": "栈三元组→堆数据", "tag": "栈", "step": "02" },
+    { "id": "moved", "type": "decision", "label": "let s2 = s1", "sublabel": "堆数据不动", "tag": "move", "step": "03" },
+    { "id": "owned_s2", "type": "active", "label": "s2 唯一所有", "sublabel": "s1 编译期失效", "tag": "栈", "step": "04" },
+    { "id": "dropped", "type": "success", "label": "离开作用域", "sublabel": "自动释放一次", "tag": "drop", "step": "05" },
+    { "id": "moved_use", "type": "failure", "label": "再用 s1", "sublabel": "borrow of moved value", "tag": "编译错误" }
+  ],
+  "transitions": [
+    { "id": "created-owned_s1", "from": "created", "to": "owned_s1", "label": "绑定" },
+    { "id": "owned_s1-moved", "from": "owned_s1", "to": "moved", "label": "赋值" },
+    { "id": "moved-owned_s2", "from": "moved", "to": "owned_s2", "label": "复制" },
+    { "id": "owned_s2-dropped", "from": "owned_s2", "to": "dropped", "label": "出域" },
+    { "id": "moved-moved_use", "from": "moved", "to": "moved_use", "label": "再用 s1", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "move 到底复制了什么",
+      "items": [
+        "堆数据原地不动，被复制的只有栈上的指针/长度/容量三元组",
+        "所有权是编译期概念：旧变量不是被藏起来，是编译器不再让你碰它",
+        "同时只有一个所有者，double free 和 use-after-free 从构造上消失"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "和 C 的浅拷贝对比",
+      "items": [
+        "C 的 s2 = s1 让两个指针共享同一块堆内存，释放时机靠人记",
+        "Rust 把释放时机绑定给唯一所有者，作用域结束即 drop"
+      ]
+    }
+  ]
+}

@@ -198,6 +198,21 @@ MCP 把服务器能提供的东西归为三类**原语（primitives）**，外�
 
 ## 3. 协议原理：JSON-RPC 2.0 之上
 
+```mermaid
+sequenceDiagram
+    participant C as Client（宿主内）
+    participant S as Server（子进程）
+    C->>S: initialize（协议版本 + 客户端能力）
+    S-->>C: result（服务器能力）
+    C->>S: tools/list（发现有哪些工具）
+    S-->>C: result（工具清单）
+    C->>S: tools/call（name + arguments）
+    S-->>C: result（resultType: complete）
+    Note over C,S: 三种消息：请求（有 id 必有响应）、<br/>响应、通知（无 id 不得回复）
+```
+
+*图：一次最小 MCP 会话的时序。全部消息都是 JSON-RPC 2.0，走 stdio 或 HTTP 传输。*
+
 ### 3.1 消息三态
 
 所有消息都是 **JSON-RPC 2.0**、UTF-8 编码，分三种：

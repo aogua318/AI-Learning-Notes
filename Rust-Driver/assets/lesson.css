@@ -188,3 +188,71 @@ th { background: var(--accent-soft); }
   .quiz-feedback { display: none; }
   a { color: var(--ink); }
 }
+
+/* ---------- archify 内联图表 ----------
+   由图由 archify 渲染（源：assets/ownership-lifecycle.json，交互版：
+   assets/ownership-lifecycle.html），SVG 内联进课程保持自包含。
+   archify 的主题变量在此映射到本课程配色，暗色模式自动跟随。 */
+.archify-figure {
+  margin: 1.6rem 0;
+  padding: 0.75rem;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  /* archify 主题变量 → 课程变量映射 */
+  --text: var(--ink);
+  --text-muted: var(--ink-soft);
+  --mask: var(--card-bg);
+  --arrow: var(--ink-soft);
+  --arrow-emphasis: var(--accent);
+  --frontend-fill: rgba(46, 107, 52, 0.10);    /* 起点：值诞生 */
+  --frontend-stroke: var(--ok);
+  --backend-fill: var(--accent-soft);          /* 常态：所有权持有中 */
+  --backend-stroke: var(--accent);
+  --database-fill: rgba(124, 58, 237, 0.08);   /* 决策：move 动作 */
+  --database-stroke: #7c3aed;
+  --external-fill: transparent;
+  --external-stroke: var(--ink-soft);
+  --security-fill: rgba(160, 44, 44, 0.08);    /* 失败：moved 后使用 */
+  --security-stroke: var(--err);
+}
+.archify-figure svg { width: 100%; height: auto; font-family: inherit; }
+.archify-figure .c-grid { stroke: transparent; fill: none; }
+.archify-figure .c-mask { fill: var(--mask); stroke: none; }
+.archify-figure .c-frontend { fill: var(--frontend-fill); stroke: var(--frontend-stroke); }
+.archify-figure .c-backend { fill: var(--backend-fill); stroke: var(--backend-stroke); }
+.archify-figure .c-database { fill: var(--database-fill); stroke: var(--database-stroke); }
+.archify-figure .c-security { fill: var(--security-fill); stroke: var(--security-stroke); }
+.archify-figure .c-external { fill: var(--external-fill); stroke: var(--external-stroke); }
+.archify-figure .t-primary { fill: var(--text); }
+.archify-figure .t-muted { fill: var(--text-muted); }
+.archify-figure .t-frontend { fill: var(--frontend-stroke); }
+.archify-figure .t-backend { fill: var(--backend-stroke); }
+.archify-figure .t-database { fill: var(--database-stroke); }
+.archify-figure .t-security { fill: var(--security-stroke); }
+.archify-figure .t-edge-emphasis { fill: var(--arrow-emphasis); }
+.archify-figure .t-edge-dashed { fill: var(--database-stroke); }
+.archify-figure .a-emphasis { stroke: var(--arrow-emphasis); fill: none; }
+.archify-figure .a-dashed { stroke: var(--database-stroke); fill: none; stroke-dasharray: 4 4; }
+.archify-figure .m-default { fill: var(--arrow); }
+.archify-figure .m-emphasis { fill: var(--arrow-emphasis); }
+.archify-figure .m-security { fill: var(--security-stroke); }
+.archify-figure .m-dashed { fill: var(--database-stroke); }
+.archify-figure .semantic-sigil { fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; opacity: 0.76; }
+.archify-figure .semantic-sigil > * { vector-effect: non-scaling-stroke; }
+.archify-figure .semantic-sigil .sigil-fill { fill: currentColor; stroke: none; }
+.archify-figure .s-frontend { color: var(--frontend-stroke); }
+.archify-figure .s-backend { color: var(--backend-stroke); }
+.archify-figure .s-database { color: var(--database-stroke); }
+.archify-figure .s-security { color: var(--security-stroke); }
+.archify-figure [data-node-id] > .c-mask { fill-opacity: 1; }
+.archify-figure figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.archify-figure figcaption a { color: var(--accent); }
+@media (prefers-color-scheme: dark) {
+  .archify-figure { --database-stroke: #a78bfa; }
+}
