@@ -6,6 +6,7 @@
 - **基础**：C 语言（会内存和指针），Python 应用层。所有权 / 借用是全新心智模型。
 - **时间**：每周 5–10 小时。
 - **文档口味**：仓库现有 md5 / bt / mp3 三篇是"原理先行、从零手搓、最终产出可用工具"的深度长文——用户吃这一套。课程产物要顺着这个习惯来。
+- **语言规则（2026-10-19 用户明确要求）**：英语水平差。教学材料里凡代码关键字和特有名词之外的英文（规则原文、编译错误信息、工具界面文案等），保留英文并附中文对照。已写入 MISSION.md Constraints，所有后续课程和文档强制执行；第一课已做 retroactive 补译。
 - **课程形态选择**：用户主动选了 HTML 互动课为主线（"试试新风格"），短课 15–20 分钟 / 节，页面内要带互动练习。
 - **决策风格**：接受推荐、不纠结；但对"顺手要的附加文档"会点名（如焊接文档），说明重视可带走的沉淀物。
 
@@ -19,8 +20,15 @@
 6. WoL 手机开机：降级为语言预备期的周末练手项目，PC 端 Rust CLI + 同 WiFi 网页按钮，不写手机 App。
 7. 焊接：第一版面包板原型零焊接；装壳阶段学 through-hole（已点名要焊接入门文档，见 soldering-tutorial.md）。
 
+## 组件库状态
+
+- `assets/zoomable-figure.js`（2026-10-19 用户升级）：滚轮以光标为中心缩放（1~8 倍）、指针事件拖拽平移、布局式缩放（改宽高+left/top，不用 transform 以保证 SVG 矢量清晰）、iframe 透明捕获层、computeZoom 纯函数可在 Node 单测。配套 CSS 契约在 `assets/lesson.css` 的"可放大图表组件"段：展开态媒体必须 `position:absolute`，否则 JS 的 left/top 平移静默失效。
+- 该组件已部署到 Japanese-Travel/assets/（两边文件一致），但 Japanese-Travel 的 4 节课暂无 figure/img，脚本尚未被引入——组件已武装待用。
+- 唯一实际使用点：`lessons/0001-ownership-and-move.html` 的所有权生命周期图（内嵌 SVG + archify-figure 样式）。
+
 ## 待核实 / 后续事项
 
+- [x] 环境搭建文档已写（setup-rust-windows.md）：rustup + rustlings，含 link.exe 问题的 GNU 工具链解法；第一课课后任务已同步为新版命令（rustlings init / rustlings，旧版 watch 已废弃——官网已核实）
 - [ ] 第一课前核实 rp2040-hal 的 MSRV（crates.io 页面 JS 渲染，抓取失败；以 crates.io 显示为准）
 - [ ] 摇杆 v1 功能边界细化：按键数 8 个是否含 Start/Select，外壳方案
 - [ ] 网络检测盒第二阶段选型：ESP32-S3 + W5500 vs 树莓派 USB gadget
