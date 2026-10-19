@@ -192,7 +192,8 @@ th { background: var(--accent-soft); }
 /* ---------- 可放大图表组件（配合 assets/zoomable-figure.js） ----------
    用法：figure 加 class="figure-zoom" 和 data-zoomable，内部放一个
    iframe / svg / img，再加一个 <button class="zoom-badge">。
-   点击徽章或浮层空白处，图表变身为近全屏；Esc 收起。 */
+   点击徽章或图表变身为近全屏浮层；浮层内滚轮以光标为中心缩放、
+   拖拽平移；再点徽章、Esc 或点浮层任意处收起。 */
 .figure-zoom {
   position: relative;
   cursor: zoom-in;
@@ -217,27 +218,49 @@ th { background: var(--accent-soft); }
   color: var(--bg);
   cursor: pointer;
 }
-/* 放大态：图表变身为近全屏浮层（JS 只切这一个 class） */
+/* 放大态：图表变身为近全屏浮层（JS 只切 expanded 这一个 class）；
+   浮层内滚轮以光标为中心缩放——JS 按倍率直接改写媒体元素的
+   宽高与 left/top（布局式缩放）：不用 transform: scale() 是因为
+   它走合成器光栅化，SVG 文字放大必糊；改宽高则重新矢量渲染 */
 .figure-zoom.expanded {
   position: fixed;
   inset: 0;
   z-index: 1000;
   margin: 0;
-  display: flex;
-  flex-direction: column;
   background: var(--bg);
-  cursor: zoom-out;
+  cursor: grab;
+  overflow: hidden;                 /* 平移出的部分裁掉，不撑滚动条 */
+  touch-action: none;               /* 触屏单指拖拽平移不滚页 */
+  user-select: none;                /* 拖拽时不会选中图注文字 */
 }
-.figure-zoom.expanded > iframe { flex: 1 1 auto; height: auto; }
+.figure-zoom.expanded > iframe,
 .figure-zoom.expanded > svg,
 .figure-zoom.expanded > img {
-  flex: 0 0 auto;
-  width: auto;
-  max-width: 96vw;
-  max-height: 86vh;
-  margin: auto;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
 }
-.figure-zoom.expanded .zoom-badge { top: 1rem; right: 1rem; bottom: auto; }
+.figure-zoom.expanded > img { object-fit: contain; }   /* 图片保持比例适配 */
+.figure-zoom.expanded > figcaption {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 0.6rem 1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.figure-zoom.expanded .zoom-badge { top: 1rem; right: 1rem; bottom: auto; z-index: 3; }
+.figure-zoom.expanded.dragging { cursor: grabbing; }
+/* iframe 专用：透明事件捕获层（iframe 内的滚轮不会冒泡到父页面），
+   由 JS 在展开时追加、收起时移除；层级在徽章和图注之下 */
+.figure-zoom .zoom-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
 
 /* ---------- archify 内联图表 ----------
    由图由 archify 渲染（源：assets/ownership-lifecycle.json，交互版：

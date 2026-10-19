@@ -47,7 +47,7 @@ brainstorming → writing-plans → executing-plans
 
 **teach × archify 搭配**：teach 工作区（如 `Rust-Driver/`、`Japanese-Travel/`）的课程与 reference 文档配图用 `archify`——生成的 SVG 内联进单文件课程，保持课程自包含；markdown 教程（如 `From-Scratch/`）则用 `design-doc-mermaid` 的 Mermaid 代码块（GitHub 原生渲染）。
 
-**课程图表默认可放大（通用约定）**：teach 工作区课程里的图表默认带放大能力——`<figure>` 加 `class="figure-zoom"`（与 `archify-figure` 并存）和 `data-zoomable` 属性，内置 `<button class="zoom-badge">⤢ 点击放大</button>`，并在 `</body>` 前引入 `../assets/zoomable-figure.js`。点徽章或图表本体变身为近全屏浮层，再点徽章、按 Esc 或点浮层空白处收起；实现上只切一个 class、不搬移 DOM 节点，SVG 内部引用和页面状态都不会丢。组件与配套 CSS 以 `Rust-Driver/assets/zoomable-figure.js` 及其 lesson.css 中的“可放大图表组件”段为准，新工作区复制这两处即用。注意：课程图保留内联 SVG 而不换成 iframe——内联 SVG 已接好 archify 主题样式（暗色模式都适配了），想要带动画的完整版才走图注里的交互版链接。
+**课程图表默认可放大（通用约定）**：teach 工作区课程里的图表默认带放大能力——`<figure>` 加 `class="figure-zoom"`（与 `archify-figure` 并存）和 `data-zoomable` 属性，内置 `<button class="zoom-badge">⤢ 点击放大</button>`，并在 `</body>` 前引入 `../assets/zoomable-figure.js`。点徽章或图表变身为近全屏浮层，浮层内**滚轮以当前光标位置为中心缩放**（1~8 倍）、拖拽平移，再点徽章、按 Esc 或点浮层任意处（图注链接除外）收起；实现上不搬移 DOM 节点（iframe 场景追加一个透明事件捕获层），只切 class 加宽高/位移（布局式缩放，SVG 文字放大不糊），SVG 内部引用和页面状态都不会丢。组件与配套 CSS 以 `Rust-Driver/assets/zoomable-figure.js` 及其 lesson.css 中的“可放大图表组件”段为准，新工作区复制这两处即用。注意：课程图保留内联 SVG 而不换成 iframe——内联 SVG 已接好 archify 主题样式（暗色模式都适配了），想要带动画的完整版才走图注里的交互版链接。
 
 ## 技能库（E:\Skills库）
 
