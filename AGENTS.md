@@ -29,7 +29,7 @@
 
 1. 创建 `<Topic>/` 目录，按上面的模板写 `README.md`：学习目标、原理路线、产物清单；
 2. 编写最小可运行示例，实际运行验证，记录预期输出；
-3. 按需拆分 `lessons/` 分步教程，代码与文档同步提交；
+3. 按需拆分 `lessons/` 分步教程，代码与文档同步提交；课程里出现图表时，按 SKILLS.md 的图表放大约定启用可放大组件（从 `Rust-Driver/assets/` 复制 `zoomable-figure.js` 和 lesson.css 中的“可放大图表组件”CSS 段）；
 4. 把参考链接和出处记入 `RESOURCES.md`；
 5. 每完成一个里程碑做一次 git commit。
 
