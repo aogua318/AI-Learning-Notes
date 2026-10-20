@@ -60,6 +60,30 @@
 </dl>
 
 <dl class="term">
+  <dt>借用（borrowing）</dt>
+  <dd>创建引用的行为；借来的数据不转移所有权，引用离开作用域时什么都不 drop。</dd>
+  <dd class="avoid">避免：借出、外借</dd>
+</dl>
+
+<dl class="term">
+  <dt>不可变引用（immutable reference）</dt>
+  <dd>&amp;T，只读访问凭证；同一时间可以存在任意多个，数据不会被它们改动。</dd>
+  <dd class="avoid">避免：只读指针、常引用</dd>
+</dl>
+
+<dl class="term">
+  <dt>可变引用（mutable reference）</dt>
+  <dd>&amp;mut T，可写访问凭证；同一时间只能存在一个（排他），且不是 Copy，赋值即移动。</dd>
+  <dd class="avoid">避免：写指针、可改引用</dd>
+</dl>
+
+<dl class="term">
+  <dt>悬垂引用（dangling reference）</dt>
+  <dd>指向已销毁数据的引用；编译器静态禁止（error[E0106]）。修复方向：把值本身交出去（返回本体），而不是返回引用。</dd>
+  <dd class="avoid">避免：野指针（C 语境词，指代不同）</dd>
+</dl>
+
+<dl class="term">
   <dt>可变绑定（mutable binding）</dt>
   <dd>用 mut 声明的变量，其值可以被修改；默认绑定不可变。</dd>
   <dd class="avoid">避免：变量（不修饰时一律指不可变绑定）</dd>
@@ -142,7 +166,7 @@
 </dl>
 
 <hr>
-<p class="meta">借用（borrowing）/ 可变借用 / 生命周期（lifetime）/ 切片（slice）/ 区间（range）/ 闭包（closure）/ 迭代器（iterator）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
+<p class="meta">生命周期（lifetime）/ 切片（slice）/ 区间（range）/ 闭包（closure）/ 迭代器（iterator）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
 术语有争议或想改定义，直接告诉我——这份表的措辞以你用得顺手为准。</p>
 
 </body>

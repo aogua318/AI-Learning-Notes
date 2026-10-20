@@ -185,11 +185,9 @@ println!("{r1}");</div>
 
 <ol>
   <li><b>The Book 第 4.2 节</b>（<a href="https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html" target="_blank">References and Borrowing</a>，本课主要来源）通读，重点看 borrow rules 和 dangling references 两段。</li>
-  <li><b>The Book 第 4.3 节 The Slice Type</b>：你在 primitive_types4 问的"<code>&amp;a[1..4]</code> 左开右闭好处在哪"——4.3 讲 slice 时正好把区间的设计逻辑讲透，这是第三课的引子。</li>
+  <li><b>The Book 第 4.3 节 The Slice Type</b>：你在 primitive_types4 问的"<code>&amp;a[1..4]</code> 左闭右开好处在哪"——4.3 讲 slice 时正好把区间的设计逻辑讲透，这是第三课的引子。</li>
   <li><b>动手改一处代码</b>：WoL 练手项目的骨架已经建好（<a href="../demo/wol/">demo/wol/</a>，任务书在它的 README 里）——把里面一个"传 String 给函数"的函数改成传 <code>&amp;str</code>；编译器会教你它想问什么。撞见的报错，贴给我。</li>
 </ol>
-
-<p><b>配套阅读指南</b>（读原文前的地图：关键句英文原文 + 中文对照 + 自测题）：<a href="0002-reading-guide-the-book.md">The Book 4.2 &amp; 4.3 阅读指南</a>。</p>
 
 <div class="callout teacher">
   <b>给固件学习者的伏笔：</b>第二阶段的摇杆固件里，主循环持有全部外设的所有权，USB 栈要发报告时怎么办？答案就是今天这一课——把按键状态的 <b>借用</b>传进去。而"一个外设同时只能被一个驱动独占"这条硬件铁律，和 <code>&amp;mut T</code> 的排他规则是同一个思想在不同世界的投影。到写固件那几课，你会回来谢谢今天这一课。

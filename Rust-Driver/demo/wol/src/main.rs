@@ -4,22 +4,19 @@
 //! "PC 端 Rust CLI + 同一 WiFi 下的网页按钮"。本骨架只走第一步：
 //! 构造 Wake-on-LAN 魔术包（magic packet）并打印，不发送网络流量。
 //!
-//! 第二课《借用与引用》的课后任务落在这个文件里：
-//! 把 build_magic_packet 的参数从 String 改成 &str。
-//! 任务书、预期报错和参考答案见同目录 README.md。
+//! 第二课《借用与引用》的课后任务在本文件完成（String → &str 重构），
+//! 任务书与预期报错见同目录 README.md；本文件是完成态。
 
 /// 构造 Wake-on-LAN 魔术包：6 字节 0xFF 开头，后面跟 16 遍目标 MAC，共 102 字节。
-///
-/// 【练习目标】把这个参数从 `mac: String` 改成 `mac: &str`，
-/// 并把 main 里那行注释掉的 println! 放出来——现在它会被编译器拦下。
-fn build_magic_packet(mac: String) -> Vec<u8> {
+/// 参数收 &str：只读借一眼，MAC 的所有权留在调用者手里。
+fn build_magic_packet(mac: &str) -> Vec<u8> {
     // vec![0xFF; 6] 是宏调用：造一个含 6 个 0xFF 的 Vec<u8>。
     // 原始写法：let mut packet = Vec::new(); for _ in 0..6 { packet.push(0xFF); }
     let mut packet = vec![0xFF; 6];
 
     // MAC 重复 16 遍，凑够网卡识别的魔术包格式
     for _ in 0..16 {
-        for byte in parse_mac(&mac) {
+        for byte in parse_mac(mac) {
             packet.push(byte);
         }
     }
@@ -58,12 +55,11 @@ fn print_hex(packet: &[u8]) {
 fn main() {
     let mac = String::from("AA-BB-CC-DD-EE-FF");
 
-    // 【练习前的样子】mac 的所有权被送进了 build_magic_packet，一去不回
-    let packet = build_magic_packet(mac);
+    // 借出去看一眼：mac 的所有权还在 main 手里，函数只读
+    let packet = build_magic_packet(&mac);
 
-    // 想在这里打印 mac？取消下一行的注释，看编译器怎么说——
-    // 然后按 README.md 的任务书，把 build_magic_packet 改成收 &str。
-    // println!("目标 MAC：{mac}");
+    // 练习完成态：mac 毫发无损，照常打印
+    println!("目标 MAC：{mac}");
 
     print_hex(&packet);
 }
