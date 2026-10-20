@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第三课：切片与区间 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+<style>
+  /* 本课图表（非 archify 生成）的图注样式，与课程排版保持一致 */
+  figure figcaption { font-size: 0.88rem; color: var(--ink-soft); text-align: center; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0003</span>
+  <span>预计 15–20 分钟</span>
+  <span>前置：第二课 + 课后任务三项完成</span>
+  <span>阶段：语言预备期（第 3 课 / 共 4 周）</span>
+</div>
+
+<h1>第三课：切片与区间——数据不用复制，可以开窗看</h1>
+
+<div class="callout teacher">
+  <b>验收通过：</b>第二课课后任务三项（The Book 4.2/4.3 通读、WoL 项目 String→&amp;str 重构）全部完成，<a href="../reference/glossary.html">术语表</a>晋升了借用、不可变引用、可变引用、悬垂引用四个词条，你的追问批阅（move 的变量模型、&amp;str vs &amp;String、NLL 规则、栈模型推断）都已归档。今天收你在 rustlings <code>primitive_types4</code> 留下的 <code>&amp;a[1..4]</code> 之问——而且要先把一个误区拆掉：你在 4.3 阅读笔记里写"半开区间的设计原因是拿来取单词"。这个答案你自己在第一课就写对过，今天把它拧回来。
+</div>
+
+<h2>1. 切片是什么：引用 + 一段范围</h2>
+
+<p>第二课说"数据不用送出去，可以借出去"。但借整个 <code>String</code> 有时候太粗了——你只想看其中五个字符，怎么办？答案是<b>切片</b>：引用集合中<b>一段连续</b>的元素。《The Rust Programming Language》第 4.3 节的定义（原文已核实）：</p>
+
+<div class="callout">
+  Slices let you reference a contiguous sequence of elements in a collection. A slice is a kind of reference, so it does not have ownership.<br>
+  （切片让你引用集合中一段连续的元素；切片是一种引用，不拥有所有权。）
+</div>
+
+<p>两种最常见的切片：<code>&amp;str</code>（字符串切片）和 <code>&amp;[T]</code>（数组等集合的切片，如 <code>&amp;[u8]</code>）。注意这句话怎么接上第二课：<b>切片 = 借用 + 范围</b>。它不拥有数据，所以不触发 drop；它活着的时候，原数据连改都不让改——第 5 节会看见这条规则发力。</p>
+
+<p>C 程序员的类比：<code>&amp;str</code> ≈ <code>(char*, len)</code>——一个地址加一个长度，两个字段打包在一起，所以叫<b>胖指针</b>。你 WoL 项目里的 <code>print_hex(packet: &amp;[u8])</code> 收的就是字节切片：函数拿到"缓冲区地址 + 长度"，能读全部字节，但一块内存都不拥有。</p>
+
+<h2>2. 图：切片的内部</h2>
+
+<figure class="figure-zoom" data-zoomable>
+<svg viewBox="0 0 920 260" role="img" aria-label="切片 &amp;s[0..5] 的内部结构示意图" style="font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;">
+  <style>
+    .f-cell { fill: var(--card-bg); stroke: var(--line); stroke-width: 1.5; }
+    .f-in { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+    .f-dash { fill: var(--card-bg); stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .f-ch { fill: var(--ink); font-size: 20px; font-weight: 600; text-anchor: middle; font-family: 'Cascadia Code', Consolas, monospace; }
+    .f-idx { fill: var(--ink-soft); font-size: 13px; text-anchor: middle; font-family: 'Cascadia Code', Consolas, monospace; }
+    .f-lbl { fill: var(--ink); font-size: 15px; }
+    .f-hl { fill: var(--accent); font-size: 16px; font-weight: 650; font-family: 'Cascadia Code', Consolas, monospace; }
+    .f-sm { fill: var(--ink-soft); font-size: 13px; }
+    .f-box { fill: var(--card-bg); stroke: var(--accent); stroke-width: 1.8; }
+    .f-arr { stroke: var(--accent); stroke-width: 2; fill: none; }
+    .f-brace { stroke: var(--accent); stroke-width: 2; fill: none; }
+  </style>
+  <defs>
+    <marker id="f-ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" style="fill: var(--accent);"/>
+    </marker>
+  </defs>
+
+  <!-- 字节行：hello world，11 个字符格 -->
+  <text class="f-idx" x="102" y="34">0</text>
+  <text class="f-idx" x="166" y="34">1</text>
+  <text class="f-idx" x="230" y="34">2</text>
+  <text class="f-idx" x="294" y="34">3</text>
+  <text class="f-idx" x="358" y="34">4</text>
+  <text class="f-idx" x="422" y="34">5</text>
+  <text class="f-idx" x="486" y="34">6</text>
+  <text class="f-idx" x="550" y="34">7</text>
+  <text class="f-idx" x="614" y="34">8</text>
+  <text class="f-idx" x="678" y="34">9</text>
+  <text class="f-idx" x="742" y="34">10</text>
+
+  <rect class="f-in" x="70" y="50" width="64" height="56"/>
+  <rect class="f-in" x="134" y="50" width="64" height="56"/>
+  <rect class="f-in" x="198" y="50" width="64" height="56"/>
+  <rect class="f-in" x="262" y="50" width="64" height="56"/>
+  <rect class="f-in" x="326" y="50" width="64" height="56"/>
+  <rect class="f-dash" x="390" y="50" width="64" height="56"/>
+  <rect class="f-cell" x="454" y="50" width="64" height="56"/>
+  <rect class="f-cell" x="518" y="50" width="64" height="56"/>
+  <rect class="f-cell" x="582" y="50" width="64" height="56"/>
+  <rect class="f-cell" x="646" y="50" width="64" height="56"/>
+  <rect class="f-cell" x="710" y="50" width="64" height="56"/>
+
+  <text class="f-ch" x="102" y="86">h</text>
+  <text class="f-ch" x="166" y="86">e</text>
+  <text class="f-ch" x="230" y="86">l</text>
+  <text class="f-ch" x="294" y="86">l</text>
+  <text class="f-ch" x="358" y="86">o</text>
+  <circle cx="422" cy="78" r="3.5" style="fill: var(--ink-soft);"/>
+  <text class="f-ch" x="486" y="86">w</text>
+  <text class="f-ch" x="550" y="86">o</text>
+  <text class="f-ch" x="614" y="86">r</text>
+  <text class="f-ch" x="678" y="86">l</text>
+  <text class="f-ch" x="742" y="86">d</text>
+
+  <text class="f-sm" x="422" y="128" text-anchor="middle">端点 5，不含</text>
+
+  <!-- 括号：标出切片范围 -->
+  <path class="f-brace" d="M 70 116 L 70 130 L 390 130 L 390 116"/>
+  <text class="f-hl" x="230" y="154" text-anchor="middle">&amp;s[0..5] = "hello"</text>
+
+  <!-- 胖指针：地址 + 长度 -->
+  <text class="f-lbl" x="70" y="188">&amp;s[0..5] 的内部——胖指针：</text>
+  <rect class="f-box" x="70" y="198" width="180" height="48"/>
+  <text class="f-lbl" x="160" y="218" text-anchor="middle">地址</text>
+  <text class="f-sm" x="160" y="236" text-anchor="middle">→ 第 0 字节</text>
+  <rect class="f-box" x="270" y="198" width="220" height="48"/>
+  <text class="f-lbl" x="380" y="218" text-anchor="middle">长度</text>
+  <text class="f-sm" x="380" y="236" text-anchor="middle">= 5 − 0 = 5</text>
+  <path class="f-arr" d="M 120 198 L 36 198 L 36 78 L 64 78" marker-end="url(#f-ah)"/>
+</svg>
+<button class="zoom-badge" type="button" aria-expanded="false">⤢ 点击放大</button>
+<figcaption>图 1：&amp;s[0..5] 的内部——切片是"胖指针"：地址指向第 0 字节，长度 = 上界 − 下界 = 5；端点 5（空格）本身不在切片里。对比 C 的 <code>char*</code> 只有一个地址、长度得另算。图较小，点右下角按钮放大；浮层内滚轮以光标为中心缩放，拖拽平移，Esc 收起。</figcaption>
+</figure>
+
+<h2>3. 区间语法：左闭右开</h2>
+
+<pre><code>let s = String::from("hello world");
+
+let hello = &amp;s[0..5];    // 含下标 0，不含下标 5 → "hello"
+let world = &amp;s[6..11];   // 含下标 6，不含下标 11 → "world"
+
+let sl = &amp;s[..2];        // 省略开头 = 从 0 开始
+let sl = &amp;s[3..];        // 省略结尾 = 一直到末尾
+let sl = &amp;s[..];         // 全省略 = 整个字符串
+
+let n = &amp;s[0..=4];       // 闭区间变体：含两端，0..=4 → "hello"</code></pre>
+
+<p>术语先拧正：<code>a..b</code> 是<b>左闭右开</b>——含左端点、不含右端点（你笔记里写成过"左开右闭"，课程任务文案里也有同样的笔误，已一并修正）。<code>a..=b</code> 是闭区间，含两端，rustlings 里你见过。</p>
+
+<p>一条实现注意：字符串切片的下标必须落在 UTF-8 字符边界上——切到多字节字符中间，程序运行到那行会直接退出（panic）。纯英文 ASCII 场景碰不到，以后处理中文时要留心。</p>
+
+<h2>4. 半开区间的三条设计理由（本课核心）</h2>
+
+<div class="callout warn">
+  <b>曾误</b>（你 4.3 阅读笔记的原话）："左开右闭的设计原因是拿来取单词，因为单词天然有空格。"<br>
+  <b>正解</b>：那是 first_word 的<b>用法</b>，不是设计原因。三条真正理由你第一课就写对过（见下表）。first_word 里 <code>&amp;s[0..i]</code> 恰好不含空格，是半开性质的<b>顺带好处</b>——闭区间写 <code>&amp;s[0..=i-1]</code> 一样取到单词，只是更绕。
+</div>
+
+<table>
+  <tr><th>理由</th><th>说明</th><th>你的现场</th></tr>
+  <tr>
+    <td><b>长度 = 上界 − 下界</b></td>
+    <td>闭区间还要 +1，多一步就多一个出错机会</td>
+    <td>DMA 传输长度、缓冲区窗口——算错一位，搬移的数据就错一位，嵌入式里这就是内存踩踏</td>
+  </tr>
+  <tr>
+    <td><b>相邻区间无缝拼接</b></td>
+    <td><code>[0..2)</code> 接 <code>[2..4)</code>，不漏不重</td>
+    <td>分包解析、流水线分段</td>
+  </tr>
+  <tr>
+    <td><b>空区间写得出来</b></td>
+    <td><code>x..x</code> 合法，长度 = 0</td>
+    <td>"从某处取零个"是合法操作，不用写特例分支</td>
+  </tr>
+</table>
+
+<p>这三条是语言设计者的账本，和"取单词"没关系。记住这个区分：<b>用例解释的是"怎么用"，设计理由解释的是"为什么这样定"</b>——你第一课的笔记分得很清，4.3 阅读时被 first_word 的例子带偏了，这是很常见的读法陷阱。</p>
+
+<h2>5. first_word 两版：切片和借用规则的合力</h2>
+
+<p>The Book 4.3 用同一个函数写了两版，这是全书最值得细读的一段。第一版返回下标：</p>
+
+<pre><code>fn first_word(s: &amp;String) -&gt; usize {
+    let bytes = s.as_bytes();
+    for (i, &amp;item) in bytes.iter().enumerate() {
+        if item == b' ' {
+            return i;      // 返回空格的下标
+        }
+    }
+    s.len()
+}
+
+let mut s = String::from("hello world");
+let word = first_word(&amp;s);   // word = 5
+s.clear();                     // s 被清空——word 还是 5，但它已经什么都不是了
+// 编译器不管：5 是个孤立的数字，和 s 的死活脱钩了</code></pre>
+
+<p>第二版返回切片：</p>
+
+<pre><code>fn first_word(s: &amp;String) -&gt; &amp;str {
+    let bytes = s.as_bytes();
+    for (i, &amp;item) in bytes.iter().enumerate() {
+        if item == b' ' {
+            return &amp;s[0..i];   // 返回切片，不是数字
+        }
+    }
+    &amp;s[..]
+}
+
+let mut s = String::from("hello world");
+let word = first_word(&amp;s);
+s.clear();   // 编译错误 error[E0502]：cannot borrow `s` as mutable
+             // because it is also borrowed as immutable
+             //（s 正被不可变借用着，不能同时借成可变）</code></pre>
+
+<p>为什么第二版能抓住第一版抓不住的 bug？因为<b>切片把"取出来的东西"和"原数据"绑成了生死共同体</b>：<code>word</code> 活着，<code>s</code> 就不许改——这正是第二课排他规则的威力。第一课消灭的是"释放后使用"，这一课顺带消灭的是"数据变了，下标/指针还在"。</p>
+
+<p class="meta">（<code>iter()</code>/<code>enumerate()</code> 是迭代器，后面有专课；现在认得"逐个扫描、带下标"即可。）</p>
+
+<h2>6. 字符串字面量就是 &amp;str</h2>
+
+<pre><code>let s = "Hello, world!";</code></pre>
+
+<p>The Book 原话：The type of <code>s</code> here is <code>&amp;str</code>: It's a slice pointing to that specific point of the binary.（这里 <code>s</code> 的类型就是 <code>&amp;str</code>：一个指向二进制文件中特定位置的切片。）字面量不可写、不可变，原因也在这——<code>&amp;str</code> 是不可变引用。</p>
+
+<p>回扣你第二课的笔记 8：<code>&amp;str</code> 是最通用的字符串参数。你的 WoL 代码里 <code>parse_mac(mac: &amp;str)</code> 以后可以直接吃字面量——<code>parse_mac("AA-BB-CC-DD-EE-FF")</code> 合法，不用先造一个 <code>String</code>。</p>
+
+<h2>7. 切片作为参数：收最泛的类型</h2>
+
+<p>The Book 的结论（原文已核实）：Defining a function to take a string slice instead of a reference to a <code>String</code> makes our API more general and useful without losing any functionality.（函数收字符串切片而不是收 <code>&amp;String</code>，API 更通用、更好用，且不损失任何功能。）三种写法各能收什么：</p>
+
+<table>
+  <tr><th>参数写法</th><th>能收什么</th><th>什么时候用</th></tr>
+  <tr><td><code>f(s: &amp;str)</code></td><td>String 的切片、字符串字面量、&amp;String（Deref 强制转换自动变 &amp;str）</td><td>只读文本——默认选择</td></tr>
+  <tr><td><code>f(s: &amp;String)</code></td><td>只有 &amp;String</td><td>几乎不用——限制更强，能力没多</td></tr>
+  <tr><td><code>f(s: String)</code></td><td>只有 String 本体（收走所有权）</td><td>要把数据留存（存进结构体、塞进 Vec）</td></tr>
+</table>
+
+<p>原则一句话：<b>收能完成任务的最泛类型</b>。函数只读文本，就收 <code>&amp;str</code>。</p>
+
+<h2>8. 互动练习</h2>
+
+<p>四段代码，判断每段是<b>编译错误</b>还是<b>正常运行</b>。全部答完看总分。</p>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <div class="quiz-code">let a = [1, 2, 3, 4, 5];
+let s = &a[1..3];
+println!("{:?}", s);</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">let s = String::from("hello");
+let sl = &s[0..2];
+s.clear();
+println!("{sl}");</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <div class="quiz-code">let s = String::from("hello");
+let sl = &s[2..2];
+println!("{sl}");</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">let s: &str = String::from("hi");</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 4</p>
+
+<h2>9. 课后任务</h2>
+
+<ol>
+  <li><b>The Book 4.3 回看</b>（<a href="https://doc.rust-lang.org/book/ch04-03-slices.html" target="_blank">The Slice Type</a>，已通读过，这次带着问题回看）：first_word 两版为什么第二版能抓住 bug（对照本课第 5 节），range 的省略写法（对照第 3 节）。确认"半开设计原因"的误区已经拆掉。</li>
+  <li><b>动手：first_word 实战</b>。在 WoL 项目里自己写一遍 The Book 的练习——<code>fn first_word(s: &amp;str) -&gt; &amp;str</code>，找到第一个空格、返回它之前的切片；然后故意写 <code>s.clear();</code> 那行，把编译器的报错原文整段贴给我。可选进阶：给 WoL 写 <code>fn oui(mac: &amp;str) -&gt; &amp;str</code>，返回厂商前缀（MAC 前三段 "AA-BB-CC"，用 <code>&amp;mac[..8]</code>）——OUI 是网卡厂商识别码，真实网络概念，你的 WoL 项目以后用得上。</li>
+  <li><b>rustlings 09_strings</b>（strings1-4）：四个练习全是 &amp;str/String 的用法，strings3 的 <code>trim_me(input: &amp;str) -&gt; &amp;str</code> 和 first_word 同构（收 &amp;str 返回 &amp;str）。07_structs 在 rustlings 轨道上随时可刷，不占本课名额。</li>
+</ol>
+
+<div class="callout teacher">
+  <b>给固件学习者的伏笔：</b>摇杆固件里，USB 每次上报的按键状态是一块字节缓冲区，你要从中取出某个按键的位——那就是 <code>&amp;[u8]</code> 切片的战场。而 DMA 传输长度的算法"上界 − 下界"，就是今天三条理由的第一条在固件里的样子：算错一位，搬移的数据就错一位，在嵌入式里这就是内存踩踏。到写固件那几课，你会回来谢谢今天这一课。
+</div>
+
+<h2>10. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议读原文）：<a href="https://doc.rust-lang.org/book/ch04-03-slices.html" target="_blank">The Rust Book, Chapter 4.3: The Slice Type</a></p>
+<p><b>下一课预告</b>：《闭包与迭代器》——你在 vecs2 写的 <code>.iter().map().collect()</code> 专课，first_word 里那个 <code>for (i, &amp;item) in bytes.iter().enumerate()</code> 也会在那里讲透。</p>
+<p><b>随时提问</b>：练习做错了不服气、想看别的讲法、想把某个概念再挖一层——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0002-borrowing-and-references.html">第二课：借用与引用</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script src="../assets/zoomable-figure.js"></script>
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构同前两课：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice="ok" 表示该选项是"正常运行"，
+   data-choice="err" 表示该选项是"编译错误"。
+   ============================================================ */
+
+// 每题配置：correct 是正确选项的 choice 值；
+// okMsg 是答对时的解释，errMsg 是答错时的解释。
+var QUIZ_ANSWERS = [
+  {
+    correct: "ok",
+    okMsg: "对。数组切片 &[i32] 完全合法，左闭右开：取下标 1、2，不含 3，输出 [2, 3]。",
+    errMsg: "不对。&a[1..3] 是合法的数组切片——引用一段连续元素，不拥有、不复制。回第 1、3 节。"
+  },
+  {
+    correct: "err",
+    okMsg: "不对。sl 还活着（println 里要读），s.clear() 需要 &mut s——读写共存，第二课的排他规则禁止。",
+    errMsg: "对。切片也是借用：sl 活着的时候原字符串连改都不让改，error[E0502]。这正是第 5 节 first_word 第二版能抓住 bug 的原因。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。空区间写得出来——2..2 长度 = 2 − 2 = 0，合法（打印空行）。这是半开设计三条理由里的第三条。",
+    errMsg: "不对。x..x 是合法空区间，长度 = 上界 − 下界 = 0。半开区间的好处之一就是空区间写得出来。回第 4 节。"
+  },
+  {
+    correct: "err",
+    okMsg: "不对。String 是拥有型、&str 是借用型，两者类型不同不能直接互认——error[E0308]。",
+    errMsg: "对。String 不能直接当 &str 用：要么借（&s），要么写字面量（\"hi\" 本身就是 &str）。回第 6、7 节。"
+  }
+];
+
+// 语法糖注释：箭头函数 (x) => { ... } 的原始写法是 function (x) { ... }。
+// forEach 是数组自带遍历方法，等价于 for (var i = 0; i < arr.length; i++)。
+var answered = { 0: false, 1: false, 2: false, 3: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }   // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 4";
+
+      if (score === 4) {
+        document.getElementById("score").textContent =
+          "本轮得分：4 / 4 —— 全对。切片这关你过了，下一课见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>
