@@ -1,0 +1,7 @@
+[package]
+name = "wol"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 骨架刻意零依赖：只用标准库，任何装了 rustup 的机器都能直接 cargo run
