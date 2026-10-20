@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第一课：快照、提交链与分支指针 — Git</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0001</span>
+  <span>预计 10 分钟</span>
+  <span>前置：无</span>
+  <span>对应长文：README §0</span>
+</div>
+
+<h1>第一课：快照、提交链与分支指针</h1>
+
+<div class="callout teacher">
+  <b>这一课只拿一个东西：</b>能在纸上画出「提交链 + 分支指针 + HEAD」，并解释为什么切分支是瞬间完成的。这是后面三节课的地基——远程、push 被拒、merge/rebase，全都建立在这张图上。
+</div>
+
+<h2>1. Git 存的是快照，不是差异</h2>
+
+<p>很多人以为 Git 每次 commit 只记录「这次改了哪几行」。不是。每次 commit 记录的是<b>当时整个项目的一份快照</b>：所有文件的目录结构，以及每个文件内容在那个时刻的引用。某个文件没变，Git 就直接复用上一份快照里的同一块内容，不会重复存——所以快照并不等于把整个项目复制一遍。</p>
+
+<p>这个设计带来一个直接后果：<b>切到某个 commit，就是把工作区恢复成那张完整快照</b>；比较两个 commit，就是比较两张快照。Git 不需要从第一天开始把差异一层层叠加起来。Pro Git 把这种思路概括为「把数据看作是对小型文件系统的一组快照」。</p>
+
+<div class="callout">
+  <b>一句话记忆：</b>commit 是存档点，不是补丁包。补丁可以丢，存档点不能丢。
+</div>
+
+<h2>2. 提交链：每个 commit 记得它的父亲</h2>
+
+<p>一个 commit 对象里至少有这些信息：</p>
+
+<table>
+  <tr><th>字段</th><th>作用</th></tr>
+  <tr><td>tree（树）</td><td>这次快照的目录结构，指向所有文件内容</td></tr>
+  <tr><td>parent（父提交）</td><td>上一个 commit 的哈希；根提交没有父提交</td></tr>
+  <tr><td>author / committer</td><td>作者与提交者，含时间戳</td></tr>
+  <tr><td>message（提交信息）</td><td>你写的说明</td></tr>
+</table>
+
+<p>父提交把一个个快照串成一条链。哈希（hash）由这些内容一起算出来，所以<b>内容一变，哈希就变</b>。你在 <code>git log --oneline</code> 里看到的 <code>a1b2c3d</code> 是短哈希，完整哈希有 40 个十六进制字符。</p>
+
+<p>合并提交（merge commit）会有<b>两个父提交</b>——它是两条链的交汇点。这一点第四课会展开，现在只要知道「父提交可以不止一个」。</p>
+
+<h2>3. 分支：一张写着 commit 哈希的便利贴</h2>
+
+<p>分支的本质简单到有点反直觉：它只是一个<b>指向某个 commit 的可移动指针</b>。在磁盘上，<code>.git/refs/heads/main</code> 这个文件里就一行哈希。创建分支不会复制任何文件，只是多写一张便利贴。</p>
+
+<pre><code># 查看本地分支，-v 顺便显示每个分支指向的 commit
+git branch -v
+
+# 创建并切换到新分支：在当前位置贴一张 feature 便利贴，再让 HEAD 指过去
+git switch -c feature
+
+# 旧写法（仍然可用）：git checkout -b feature</code></pre>
+
+<p><code>main</code> 没有任何特殊地位，它只是 <code>git init</code> 默认起的名字。你完全可以叫 <code>trunk</code>、<code>dev</code> 或 <code>zhu</code>。真正特殊的是 <b>HEAD</b>。</p>
+
+<h2>4. HEAD：你现在站在哪</h2>
+
+<p><code>HEAD</code> 是「当前所在位置」的指针。正常状态下它指向一个分支，比如 <code>HEAD → main</code>；<code>git switch</code> 做的事就是移动 HEAD，并把工作区更新成目标分支那张快照。</p>
+
+<p>HEAD 也可以直接指向某个 commit，这叫 <b>detached HEAD（分离头指针）</b>。这时你不在任何分支上，新提交没有分支保着，切走之后容易「丢」。初学阶段记住一条：<b>看到 detached HEAD，先新建一个分支再干活</b>。</p>
+
+<pre><code># 看 HEAD 现在指向谁
+git branch --show-current     # 输出当前分支名；detached 时为空
+git log -1 --oneline --decorate
+
+# 万一进了 detached HEAD，用一条新分支把当前位置保下来
+git switch -c rescue-here</code></pre>
+
+<h2>5. 互动图：建分支、提交、再切回来</h2>
+
+<p>点四个标签，按顺序看。注意每一帧里只有<b>指针</b>在动，提交本身一个都没被复制。</p>
+
+<div class="diagram-tabs" data-tabs data-initial="0">
+  <div class="tab-bar" role="tablist" aria-label="分支与 HEAD 的四个状态">
+    <button class="tab-btn" data-tab="0" type="button">① 初始</button>
+    <button class="tab-btn" data-tab="1" type="button">② 建 feature</button>
+    <button class="tab-btn" data-tab="2" type="button">③ 在 feature 提交</button>
+    <button class="tab-btn" data-tab="3" type="button">④ 切回 main</button>
+  </div>
+
+  <div class="tab-panel" data-panel="0" data-status="<b>main → c3</b>，HEAD → main。下一次提交会接在 c3 后面，并把 main 一起往前带。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 300" role="img" aria-label="① 初始状态">
+      <defs>
+        <marker id="arr-p1-0" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-head-p1-0" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">① 初始状态</text>
+      <g>
+        <rect x="57.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="100" y="165" class="git-label" text-anchor="middle">c1</text>
+        <text x="100" y="183" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="207.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="250" y="165" class="git-label" text-anchor="middle">c2</text>
+        <text x="250" y="183" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <g>
+        <rect x="357.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="400" y="165" class="git-label" text-anchor="middle">c3</text>
+        <text x="400" y="183" class="git-sub" text-anchor="middle">快照 3</text>
+      </g>
+      <path d="M 143 160 H 207" class="git-edge" marker-end="url(#arr-p1-0)"/>
+      <path d="M 293 160 H 357" class="git-edge" marker-end="url(#arr-p1-0)"/>
+      <rect x="368.0" y="88" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="400" y="104" class="git-ref-text" text-anchor="middle">main</text>
+      <path d="M 328 100 H 365.0" class="git-arrow" marker-end="url(#arr-head-p1-0)"/>
+      <rect x="272.0" y="88" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="300" y="104" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="380.0" y="284" class="git-note" text-anchor="middle">main 指向 c3；HEAD 指向 main。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="1" data-status="<b>feature → c3</b>，HEAD → feature。两张便利贴贴在同一个提交上；feature 是从当前快照长出来的，不是复制目录。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 300" role="img" aria-label="② switch -c feature">
+      <defs>
+        <marker id="arr-p1-1" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-head-p1-1" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">② switch -c feature</text>
+      <g>
+        <rect x="57.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="100" y="165" class="git-label" text-anchor="middle">c1</text>
+        <text x="100" y="183" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="207.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="250" y="165" class="git-label" text-anchor="middle">c2</text>
+        <text x="250" y="183" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <g>
+        <rect x="357.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="400" y="165" class="git-label" text-anchor="middle">c3</text>
+        <text x="400" y="183" class="git-sub" text-anchor="middle">快照 3</text>
+      </g>
+      <path d="M 143 160 H 207" class="git-edge" marker-end="url(#arr-p1-1)"/>
+      <path d="M 293 160 H 357" class="git-edge" marker-end="url(#arr-p1-1)"/>
+      <rect x="368.0" y="88" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="400" y="104" class="git-ref-text" text-anchor="middle">main</text>
+      <rect x="361.0" y="53" width="78" height="24" rx="12" class="git-ref feature"/>
+      <text x="400" y="69" class="git-ref-text feature" text-anchor="middle">feature</text>
+      <path d="M 328 65 H 358.0" class="git-arrow" marker-end="url(#arr-head-p1-1)"/>
+      <rect x="272.0" y="53" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="300" y="69" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="380.0" y="284" class="git-note" text-anchor="middle">feature 与 main 同指 c3；HEAD 改指 feature。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="2" data-status="<b>feature → c4</b>，main 留在 c3。提交只改变「当前分支」那张便利贴的位置；另一条分支原地不动。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 300" role="img" aria-label="③ 在 feature 上提交">
+      <defs>
+        <marker id="arr-p1-2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-new-p1-2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-new"/></marker>
+        <marker id="arr-head-p1-2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">③ 在 feature 上提交</text>
+      <g>
+        <rect x="57.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="100" y="165" class="git-label" text-anchor="middle">c1</text>
+        <text x="100" y="183" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="207.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="250" y="165" class="git-label" text-anchor="middle">c2</text>
+        <text x="250" y="183" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <g>
+        <rect x="357.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="400" y="165" class="git-label" text-anchor="middle">c3</text>
+        <text x="400" y="183" class="git-sub" text-anchor="middle">快照 3</text>
+      </g>
+      <path d="M 143 160 H 207" class="git-edge" marker-end="url(#arr-p1-2)"/>
+      <path d="M 293 160 H 357" class="git-edge" marker-end="url(#arr-p1-2)"/>
+      <g>
+        <rect x="507.0" y="129.0" width="86" height="62" rx="10" class="git-node new"/>
+        <text x="550" y="165" class="git-label" text-anchor="middle">c4</text>
+        <text x="550" y="183" class="git-sub" text-anchor="middle">快照 4</text>
+      </g>
+      <path d="M 443 160 H 507" class="git-edge new" marker-end="url(#arr-new-p1-2)"/>
+      <rect x="368.0" y="88" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="400" y="104" class="git-ref-text" text-anchor="middle">main</text>
+      <rect x="511.0" y="53" width="78" height="24" rx="12" class="git-ref feature"/>
+      <text x="550" y="69" class="git-ref-text feature" text-anchor="middle">feature</text>
+      <path d="M 488 65 H 508.0" class="git-arrow" marker-end="url(#arr-head-p1-2)"/>
+      <rect x="432.0" y="53" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="460" y="69" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="380.0" y="284" class="git-note" text-anchor="middle">只有 feature 前移到 c4；main 留在 c3。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="3" data-status="<b>HEAD → main</b>，分支 feature 仍指向 c4。c4 没有被删除——它由 feature 这张便利贴保着，随时可以切回去。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 300" role="img" aria-label="④ switch main">
+      <defs>
+        <marker id="arr-p1-3" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-head-p1-3" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">④ switch main</text>
+      <g>
+        <rect x="57.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="100" y="165" class="git-label" text-anchor="middle">c1</text>
+        <text x="100" y="183" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="207.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="250" y="165" class="git-label" text-anchor="middle">c2</text>
+        <text x="250" y="183" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <g>
+        <rect x="357.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="400" y="165" class="git-label" text-anchor="middle">c3</text>
+        <text x="400" y="183" class="git-sub" text-anchor="middle">快照 3</text>
+      </g>
+      <path d="M 143 160 H 207" class="git-edge" marker-end="url(#arr-p1-3)"/>
+      <path d="M 293 160 H 357" class="git-edge" marker-end="url(#arr-p1-3)"/>
+      <g>
+        <rect x="507.0" y="129.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="550" y="165" class="git-label" text-anchor="middle">c4</text>
+        <text x="550" y="183" class="git-sub" text-anchor="middle">快照 4</text>
+      </g>
+      <path d="M 443 160 H 507" class="git-edge" marker-end="url(#arr-p1-3)"/>
+      <rect x="368.0" y="88" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="400" y="104" class="git-ref-text" text-anchor="middle">main</text>
+      <rect x="511.0" y="88" width="78" height="24" rx="12" class="git-ref feature"/>
+      <text x="550" y="104" class="git-ref-text feature" text-anchor="middle">feature</text>
+      <path d="M 328 100 H 365.0" class="git-arrow" marker-end="url(#arr-head-p1-3)"/>
+      <rect x="272.0" y="88" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="300" y="104" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="380.0" y="284" class="git-note" text-anchor="middle">HEAD 回到 main；c4 仍由 feature 指向。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <p class="tab-status" data-tab-status></p>
+</div>
+
+<p class="meta">图 1 · 分支与 HEAD 的四种状态。绿色虚线框是 HEAD，绿色实线框是 feature，赭石色框是 main；箭头方向表示「指向」，不是时间方向。</p>
+
+<h2>6. 沙箱练习：让文件随分支「消失」又「回来」</h2>
+
+<div class="callout warn">
+  <b>先确认沙箱存在。</b>在 <code>Git/</code> 目录下运行 <code>bash git_sandbox.sh</code> 可搭建；如果提示目录不完整，脚本会建议 <code>--reset</code>——<b>它会删除 sandbox 里的全部内容</b>，只在确认没有要保留的练习时才用。下面的命令都在 <code>Git/sandbox/work</code> 里执行。
+</div>
+
+<pre><code>cd Git/sandbox/work
+
+# 1. 看当前历史与指针
+git log --oneline --graph --decorate --all
+
+# 2. 建一个分支并切过去
+git switch -c feature
+
+# 3. 在 feature 上提交一行笔记
+echo "feature 分支上的第三行" &gt;&gt; notes.md
+git add notes.md
+git commit -m "docs: 在 feature 上记一笔"
+
+# 4. 看两条分支现在各自指向哪
+git branch -v
+git log --oneline --graph --decorate --all
+
+# 5. 切回 main，观察工作区
+git switch main
+cat notes.md
+#   刚才那行「feature 分支上的第三行」不见了——你回到了 main 的快照
+
+# 6. 再切回 feature，它又回来了
+git switch feature
+cat notes.md</code></pre>
+
+<p><b>要观察的三件事：</b></p>
+<ol>
+  <li><code>git branch -v</code> 里 main 与 feature 指向不同的短哈希；</li>
+  <li><code>git log --graph --all</code> 里两条件指向同一个分叉点；</li>
+  <li>切换分支时，<code>notes.md</code> 的内容跟着变——这就是「快照」最直观的证据。</li>
+</ol>
+
+<div class="callout">
+  <b>注意：</b>如果切换时提示有未提交的修改会阻止切换，先 <code>git status</code> 看清是什么，再决定提交、暂存还是丢弃。<b>不要</b>在没看内容前就 <code>git checkout -- .</code>。
+</div>
+
+<h2>7. 自测</h2>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1 · commit 里存的是什么？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">自上次提交以来的文件差异</button>
+    <button data-choice="b" type="button">当时项目的一份完整快照</button>
+    <button data-choice="c" type="button">仅提交信息与作者时间</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2 · <code>git switch -c feature</code> 做了什么？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">复制当前目录到 feature 文件夹</button>
+    <button data-choice="b" type="button">新建指针 feature 并移动 HEAD</button>
+    <button data-choice="c" type="button">把 main 的提交移动到新分支</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3 · 切回 main 后，feature 独有的提交会怎样？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">被 Git 自动删除，除非先推送</button>
+    <button data-choice="b" type="button">被合并进 main，历史变成一条线</button>
+    <button data-choice="c" type="button">仍由 feature 指针保留，随时可切回</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4 · HEAD 是什么？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">指向最新 commit 的固定标签</button>
+    <button data-choice="b" type="button">指向当前分支或提交的指针</button>
+    <button data-choice="c" type="button">远程默认分支的本地缓存</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score"></p>
+
+<h2>8. 主要资源</h2>
+
+<ul>
+  <li><a href="https://git-scm.com/book/zh/v2/起步-关于版本控制" target="_blank" rel="noopener">Pro Git 中文版 · 1.3 关于版本控制</a>——「快照流」的原始出处，本节的首选阅读。</li>
+  <li><a href="https://git-scm.com/book/zh/v2/Git-分支-分支简介" target="_blank" rel="noopener">Pro Git 中文版 · 3.1 分支简介</a>——分支指针与 HEAD 的图解。</li>
+  <li><a href="https://learngitbranching.js.org/?locale=zh_CN" target="_blank" rel="noopener">Learn Git Branching</a>——在浏览器里拖分支、跑命令，练「指针怎么动」最快。</li>
+</ul>
+
+<div class="callout teacher">
+  <b>有卡住的地方就问。</b>我是你的老师，不是只会念文档的搜索框——比如「detached HEAD 到底危险在哪」「为什么切分支这么快」，都可以直接追问。下一课我们把这张本地图扩到远程：工作区、暂存区、本地仓库，再加一个 <code>origin/main</code>。
+</div>
+
+<nav class="lesson-nav">
+  <a href="../README.md">← 返回 Git 长文</a> ·
+  <a href="../reference/glossary.html">术语表</a> ·
+  <a href="0002-three-areas-and-remote-map.html">下一课：三区与远程地图 →</a>
+</nav>
+
+<script src="../assets/quiz.js"></script>
+<script>
+  var QUIZ_CONFIG = [
+    {
+      correct: "b",
+      okMsg: "对。commit 记录的是当时项目的快照；没变的文件复用上一份内容。",
+      errMsg: "再想想：Git 的设计是「快照流」，不是「差异流」。"
+    },
+    {
+      correct: "b",
+      okMsg: "对。分支只是指向 commit 的指针，switch -c 新建指针并移动 HEAD。",
+      errMsg: "分支不会复制目录，也不是移动提交；它只是多了一张便利贴。"
+    },
+    {
+      correct: "c",
+      okMsg: "对。feature 指针保着那些提交，切回去就能看到。",
+      errMsg: "切分支不会删除提交；只要还有分支或引用指向它，提交就还在。"
+    },
+    {
+      correct: "b",
+      okMsg: "对。HEAD 指向当前分支；分离头指针时直接指向某个提交。",
+      errMsg: "HEAD 不是标签，也不是远程缓存；它是「你现在站在哪」。"
+    }
+  ];
+  initQuizzes(QUIZ_CONFIG, "score");
+</script>
+<script src="../assets/diagram-tabs.js"></script>
+<script src="../assets/zoomable-figure.js"></script>
+</body>
+</html>

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第四课：merge 还是 rebase — Git</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0004</span>
+  <span>预计 15 分钟</span>
+  <span>前置：0001–0003</span>
+  <span>对应长文：README §3</span>
+</div>
+
+<h1>第四课：merge 还是 rebase——把分叉讲清楚</h1>
+
+<div class="callout teacher">
+  <b>这一课只拿一个东西：</b>看到两条分支分叉时，能画出 fast-forward、merge、rebase 三种结果，并说清楚「谁会改写历史、谁适合共享分支」。
+</div>
+
+<h2>1. 分叉不是错误，是并行工作的正常形状</h2>
+
+<p>第一课说过，分支只是指向提交的指针。两个人（或两个任务）从同一个提交出发，各自往前提交，历史就分叉了：两条链共享一个<b>共同祖先（common ancestor）</b>，之后各走各的。</p>
+
+<p>分叉之后，要把两条线合到一起，Git 给你两种基本动作：<b>merge（合并）</b>和 <b>rebase（变基）</b>。它们不是「高级/低级」之分，而是对历史的两种态度：</p>
+
+<table>
+  <tr><th></th><th>merge</th><th>rebase</th></tr>
+  <tr><td>对历史</td><td>保留分叉，增加一个合并点</td><td>把提交搬到新基底，拉成直线</td></tr>
+  <tr><td>提交哈希</td><td>已有提交不变</td><td>被重放的提交全部换新哈希</td></tr>
+  <tr><td>适合</td><td>共享分支、想保留真实协作痕迹</td><td>个人分支、推送前整理历史</td></tr>
+</table>
+
+<h2>2. fast-forward：没有分叉时，连合并提交都不用</h2>
+
+<p>如果 <code>main</code> 是 <code>feature</code> 的祖先——也就是说，main 停在分叉点上没动，只有 feature 在前进——那么把 feature 合进 main 只需要<b>把 main 指针往前挪</b>。没有分叉，也就不需要合并提交。这叫 <b>fast-forward（快进）</b>。</p>
+
+<pre><code>git switch main
+git merge feature
+# Fast-forward
+#  main 直接前移到 feature 的位置</code></pre>
+
+<p>想强制要求「必须能快进，否则报错」，用 <code>git merge --ff-only feature</code>。反过来，即使能快进也想留下一个合并提交，用 <code>git merge --no-ff feature</code>。</p>
+
+<h2>3. merge：生成一个双亲提交</h2>
+
+<p>两边都有新提交时，merge 会创建一个新的 <b>merge commit</b>：它的父提交有两个——一个是 main 的最新提交，一个是 feature 的最新提交。历史保留分叉，像两条河在一个点汇合。</p>
+
+<pre><code>git switch main
+git merge feature -m "merge: 合并 feature"
+# 生成 m，父提交是 main 的 c3 与 feature 的 f2</code></pre>
+
+<p>merge 不会改写任何已有提交，所以对<b>已经推送、别人可能在用的分支</b>是安全的。代价是历史不再是直线，读 <code>git log --graph</code> 时能看到分叉与汇合。</p>
+
+<h2>4. rebase：把你的提交「重放」到新基底上</h2>
+
+<p>rebase 的思路不同：它找到两条分支的共同祖先，把你这一侧独有的提交逐个<b>重放</b>到目标分支的最新提交之后。每个重放出来的提交内容相似，但父提交变了，所以<b>哈希全变</b>。</p>
+
+<pre><code>git switch feature
+git rebase main
+# 把 feature 上独有的提交重放到 main 的最新提交之后</code></pre>
+
+<p>结果是一条直线，像你一开始就从最新的 main 拉出分支一样。原来的提交并没有立刻被删除——它们还躺在 reflog 里一段时间——但分支已经不再指向它们。对协作者来说，这段历史被改写了。</p>
+
+<div class="callout warn">
+  <b>冲突时：</b>rebase 会停在冲突处。解决文件后 <code>git add &lt;文件&gt;</code>，再 <code>git rebase --continue</code>；想放弃就 <code>git rebase --abort</code>。不要用 <code>git commit</code> 去「完成」一次 rebase——那会打乱重放流程。
+</div>
+
+<h2>5. 互动图：同一段分叉的三种结局</h2>
+
+<p>四个标签按顺序点。重点看 <b>main / feature 两张便利贴的位置</b>，以及哪些提交变成了灰色虚线（旧位置）。</p>
+
+<div class="diagram-tabs" data-tabs data-initial="0">
+  <div class="tab-bar" role="tablist" aria-label="分叉、快进、合并与变基">
+    <button class="tab-btn" data-tab="0" type="button">① 分叉</button>
+    <button class="tab-btn" data-tab="1" type="button">② fast-forward</button>
+    <button class="tab-btn" data-tab="2" type="button">③ merge</button>
+    <button class="tab-btn" data-tab="3" type="button">④ rebase</button>
+  </div>
+
+  <div class="tab-panel" data-panel="0" data-status="<b>共同祖先 c2</b>；main 走到 c3，feature 走到 f2。两边都有对方没有的提交，所以不能快进。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 820 400" role="img" aria-label="① 分叉：两边都有新提交">
+      <defs>
+        <marker id="arr-p4-0" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-head-p4-0" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">① 分叉：两边都有新提交</text>
+      <g>
+        <rect x="37.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="80" y="145" class="git-label" text-anchor="middle">c1</text>
+        <text x="80" y="163" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="177.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="220" y="145" class="git-label" text-anchor="middle">c2</text>
+        <text x="220" y="163" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <path d="M 123 140 H 177" class="git-edge" marker-end="url(#arr-p4-0)"/>
+      <g>
+        <rect x="337.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="380" y="145" class="git-label" text-anchor="middle">c3</text>
+        <text x="380" y="163" class="git-sub" text-anchor="middle">main 新提交</text>
+      </g>
+      <path d="M 263 140 H 337" class="git-edge" marker-end="url(#arr-p4-0)"/>
+      <g>
+        <rect x="337.0" y="229.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="380" y="265" class="git-label" text-anchor="middle">f1</text>
+        <text x="380" y="283" class="git-sub" text-anchor="middle">feature 提交</text>
+      </g>
+      <g>
+        <rect x="497.0" y="229.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="540" y="265" class="git-label" text-anchor="middle">f2</text>
+        <text x="540" y="283" class="git-sub" text-anchor="middle">feature 最新</text>
+      </g>
+      <path d="M 220 171 V 260 H 337" class="git-edge" marker-end="url(#arr-p4-0)"/>
+      <path d="M 423 260 H 497" class="git-edge" marker-end="url(#arr-p4-0)"/>
+      <rect x="348.0" y="68" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="380" y="84" class="git-ref-text" text-anchor="middle">main</text>
+      <rect x="501.0" y="308" width="78" height="24" rx="12" class="git-ref feature"/>
+      <text x="540" y="324" class="git-ref-text feature" text-anchor="middle">feature</text>
+      <path d="M 308 80 H 345.0" class="git-arrow" marker-end="url(#arr-head-p4-0)"/>
+      <rect x="252.0" y="68" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="280" y="84" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="410.0" y="384" class="git-note" text-anchor="middle">main 与 feature 从 c2 分叉；两边各有新提交。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="1" data-status="<b>main 直接前移到 f2</b>。main 原本停在分叉点，没有自己的新提交，所以不需要 merge commit。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 820 400" role="img" aria-label="② fast-forward：main 直接前移">
+      <defs>
+        <marker id="arr-p4-1" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-new-p4-1" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-new"/></marker>
+        <marker id="arr-head-p4-1" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">② fast-forward：main 直接前移</text>
+      <g>
+        <rect x="37.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="80" y="145" class="git-label" text-anchor="middle">c1</text>
+        <text x="80" y="163" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="177.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="220" y="145" class="git-label" text-anchor="middle">c2</text>
+        <text x="220" y="163" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <path d="M 123 140 H 177" class="git-edge" marker-end="url(#arr-p4-1)"/>
+      <g>
+        <rect x="337.0" y="229.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="380" y="265" class="git-label" text-anchor="middle">f1</text>
+        <text x="380" y="283" class="git-sub" text-anchor="middle">feature 提交</text>
+      </g>
+      <g>
+        <rect x="497.0" y="229.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="540" y="265" class="git-label" text-anchor="middle">f2</text>
+        <text x="540" y="283" class="git-sub" text-anchor="middle">feature 最新</text>
+      </g>
+      <path d="M 220 171 V 260 H 337" class="git-edge" marker-end="url(#arr-p4-1)"/>
+      <path d="M 423 260 H 497" class="git-edge" marker-end="url(#arr-p4-1)"/>
+      <rect x="188.0" y="74" width="64" height="24" rx="12" class="git-ref old"/>
+      <text x="220" y="90" class="git-ref-text old" text-anchor="middle">main</text>
+      <text x="220" y="64" class="git-note" text-anchor="middle">合并前</text>
+      <rect x="508.0" y="178" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="540" y="194" class="git-ref-text" text-anchor="middle">main</text>
+      <text x="540" y="168" class="git-note" text-anchor="middle">合并后</text>
+      <path d="M 252 80 C 380 40, 480 120, 508 190" class="git-edge emphasis" marker-end="url(#arr-new-p4-1)"/>
+      <text x="380" y="52" class="git-note" text-anchor="middle">fast-forward</text>
+      <rect x="501.0" y="308" width="78" height="24" rx="12" class="git-ref feature"/>
+      <text x="540" y="324" class="git-ref-text feature" text-anchor="middle">feature</text>
+      <path d="M 488 190 H 505.0" class="git-arrow" marker-end="url(#arr-head-p4-1)"/>
+      <rect x="432.0" y="178" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="460" y="194" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="410.0" y="384" class="git-note" text-anchor="middle">main 没有分叉：直接前移到 f2，历史保持一条线。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="2" data-status="<b>merge 生成 m</b>：m 的父提交是 c3 与 f2。main 走到 m，feature 仍停在 f2；分叉被完整保留。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 820 380" role="img" aria-label="③ merge：生成双亲提交">
+      <defs>
+        <marker id="arr-p4-2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-merge-p4-2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-merge"/></marker>
+        <marker id="arr-head-p4-2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">③ merge：生成双亲提交</text>
+      <g>
+        <rect x="37.0" y="229.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="80" y="265" class="git-label" text-anchor="middle">c1</text>
+        <text x="80" y="283" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="177.0" y="229.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="220" y="265" class="git-label" text-anchor="middle">c2</text>
+        <text x="220" y="283" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <path d="M 123 260 H 177" class="git-edge" marker-end="url(#arr-p4-2)"/>
+      <g>
+        <rect x="337.0" y="229.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="380" y="265" class="git-label" text-anchor="middle">c3</text>
+        <text x="380" y="283" class="git-sub" text-anchor="middle">main 新提交</text>
+      </g>
+      <path d="M 263 260 H 337" class="git-edge" marker-end="url(#arr-p4-2)"/>
+      <g>
+        <rect x="337.0" y="119.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="380" y="155" class="git-label" text-anchor="middle">f1</text>
+        <text x="380" y="173" class="git-sub" text-anchor="middle">feature 提交</text>
+      </g>
+      <g>
+        <rect x="497.0" y="119.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="540" y="155" class="git-label" text-anchor="middle">f2</text>
+        <text x="540" y="173" class="git-sub" text-anchor="middle">feature 最新</text>
+      </g>
+      <g>
+        <rect x="637.0" y="174.0" width="86" height="62" rx="10" class="git-node merge"/>
+        <text x="680" y="210" class="git-label" text-anchor="middle">m</text>
+        <text x="680" y="228" class="git-sub" text-anchor="middle">merge commit</text>
+      </g>
+      <path d="M 220 291 V 150 H 337" class="git-edge" marker-end="url(#arr-p4-2)"/>
+      <path d="M 423 150 H 497" class="git-edge" marker-end="url(#arr-p4-2)"/>
+      <path d="M 423 260 H 680 V 174" class="git-edge merge" marker-end="url(#arr-merge-p4-2)"/>
+      <path d="M 583 150 H 610 V 205 H 637" class="git-edge merge" marker-end="url(#arr-merge-p4-2)"/>
+      <rect x="648.0" y="98" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="680" y="114" class="git-ref-text" text-anchor="middle">main</text>
+      <rect x="501.0" y="298" width="78" height="24" rx="12" class="git-ref feature"/>
+      <text x="540" y="314" class="git-ref-text feature" text-anchor="middle">feature</text>
+      <path d="M 608 110 H 645.0" class="git-arrow" marker-end="url(#arr-head-p4-2)"/>
+      <rect x="552.0" y="98" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="580" y="114" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="410.0" y="364" class="git-note" text-anchor="middle">merge 生成 m：父提交是 c3 与 f2；分叉被保留。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="3" data-status="<b>rebase 把 f1、f2 重放到 c3 之后</b>，得到 f1'、f2'，哈希全变。旧的 f1、f2 变成灰色虚线，feature 改指 f2'。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 820 400" role="img" aria-label="④ rebase：重放提交">
+      <defs>
+        <marker id="arr-p4-3" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head"/></marker>
+        <marker id="arr-merge-p4-3" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-merge"/></marker>
+        <marker id="arr-head-p4-3" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" class="git-arrow-head-head"/></marker>
+      </defs>
+      <text x="20" y="30" class="git-panel-title">④ rebase：重放提交</text>
+      <g>
+        <rect x="37.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="80" y="145" class="git-label" text-anchor="middle">c1</text>
+        <text x="80" y="163" class="git-sub" text-anchor="middle">快照 1</text>
+      </g>
+      <g>
+        <rect x="177.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="220" y="145" class="git-label" text-anchor="middle">c2</text>
+        <text x="220" y="163" class="git-sub" text-anchor="middle">快照 2</text>
+      </g>
+      <path d="M 123 140 H 177" class="git-edge" marker-end="url(#arr-p4-3)"/>
+      <g>
+        <rect x="337.0" y="109.0" width="86" height="62" rx="10" class="git-node"/>
+        <text x="380" y="145" class="git-label" text-anchor="middle">c3</text>
+        <text x="380" y="163" class="git-sub" text-anchor="middle">main 新提交</text>
+      </g>
+      <path d="M 263 140 H 337" class="git-edge" marker-end="url(#arr-p4-3)"/>
+      <g>
+        <rect x="337.0" y="229.0" width="86" height="62" rx="10" class="git-node old"/>
+        <text x="380" y="265" class="git-label" text-anchor="middle">f1</text>
+        <text x="380" y="283" class="git-sub" text-anchor="middle">旧提交</text>
+      </g>
+      <g>
+        <rect x="497.0" y="229.0" width="86" height="62" rx="10" class="git-node old"/>
+        <text x="540" y="265" class="git-label" text-anchor="middle">f2</text>
+        <text x="540" y="283" class="git-sub" text-anchor="middle">旧提交</text>
+      </g>
+      <g>
+        <rect x="497.0" y="109.0" width="86" height="62" rx="10" class="git-node merge"/>
+        <text x="540" y="145" class="git-label" text-anchor="middle">f1'</text>
+        <text x="540" y="163" class="git-sub" text-anchor="middle">重放后的提交</text>
+      </g>
+      <g>
+        <rect x="657.0" y="109.0" width="86" height="62" rx="10" class="git-node merge"/>
+        <text x="700" y="145" class="git-label" text-anchor="middle">f2'</text>
+        <text x="700" y="163" class="git-sub" text-anchor="middle">重放后的提交</text>
+      </g>
+      <path d="M 220 171 V 260 H 337" class="git-edge old" marker-end="url(#arr-p4-3)"/>
+      <path d="M 423 260 H 497" class="git-edge old" marker-end="url(#arr-p4-3)"/>
+      <path d="M 423 140 H 497" class="git-edge merge" marker-end="url(#arr-merge-p4-3)"/>
+      <path d="M 583 140 H 657" class="git-edge merge" marker-end="url(#arr-merge-p4-3)"/>
+      <rect x="348.0" y="68" width="64" height="24" rx="12" class="git-ref"/>
+      <text x="380" y="84" class="git-ref-text" text-anchor="middle">main</text>
+      <rect x="661.0" y="68" width="78" height="24" rx="12" class="git-ref feature"/>
+      <text x="700" y="84" class="git-ref-text feature" text-anchor="middle">feature</text>
+      <rect x="501.0" y="308" width="78" height="24" rx="12" class="git-ref old"/>
+      <text x="540" y="324" class="git-ref-text old" text-anchor="middle">feature</text>
+      <path d="M 648 80 H 658.0" class="git-arrow" marker-end="url(#arr-head-p4-3)"/>
+      <rect x="592.0" y="68" width="56" height="24" rx="12" class="git-ref head"/>
+      <text x="620" y="84" class="git-ref-text head" text-anchor="middle">HEAD</text>
+      <text x="540" y="344" class="git-note" text-anchor="middle">旧提交仍可在 reflog 里找到，但 feature 已指向 f2'。</text>
+      <text x="410.0" y="384" class="git-note" text-anchor="middle">rebase 把 f1、f2 重放到 c3 之后：新提交 f1'、f2'，哈希全变。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <p class="tab-status" data-tab-status></p>
+</div>
+
+<p class="meta">图 4 · 同一段分叉的三种结局。紫色表示 merge / rebase 产生的新提交；灰色虚线表示被留在原地的旧提交。</p>
+
+<h2>6. 金色法则：别 rebase 别人脚下的历史</h2>
+
+<div class="callout warn">
+  <b>Pro Git 的原话：</b>“Do not rebase commits that exist outside your repository and that people may have based work on.”<br>
+  <b>中文：</b>不要对「已经存在于你的仓库之外、且别人可能基于它工作」的提交执行变基。
+</div>
+
+<p>原因很直接：rebase 会换掉提交的哈希。别人基于旧提交继续工作，你再把改写后的历史推上去，对方的历史就对不上了——轻则重复提交，重则冲突一片。判断标准不是「分支有没有推送过」，而是<b>「有没有别人可能已经基于这些提交工作」</b>。</p>
+
+<ul>
+  <li><b>个人 feature 分支、还没推送：</b>放心 rebase 整理历史。</li>
+  <li><b>已经推送、只有你用的 feature 分支：</b>可以 rebase，但推送时需要 <code>--force-with-lease</code>；先确认没有别人参与。</li>
+  <li><b>main / 共享分支：</b>不要 rebase。用 merge，或通过 Pull Request 合并。</li>
+</ul>
+
+<h2>7. 怎么选：一张决策表</h2>
+
+<table>
+  <tr><th>场景</th><th>选择</th><th>理由</th></tr>
+  <tr><td>本地未推送的个人提交，想保持直线</td><td><code>git pull --rebase</code></td><td>不打扰别人，历史干净</td></tr>
+  <tr><td>功能分支要合进 main</td><td>merge（或 PR merge）</td><td>保留真实分叉，安全</td></tr>
+  <tr><td>main 自己没动，只想追上 feature</td><td>fast-forward</td><td>没有分叉，直接前移</td></tr>
+  <tr><td>已共享的分支要同步远端</td><td>merge</td><td>不改写任何人的历史</td></tr>
+  <tr><td>已推送的个人分支做了 rebase</td><td><code>--force-with-lease</code></td><td>仅限独占分支，且先确认远端</td></tr>
+</table>
+
+<h2>8. 沙箱练习：各做一次 merge 与 rebase</h2>
+
+<div class="callout warn">
+  沙箱没搭好时，先在 <code>Git/</code> 目录运行 <code>bash git_sandbox.sh</code>。<code>--reset</code> 会删除 sandbox 内容，确认不需要保留旧练习再用。
+</div>
+
+<h3>merge：制造分叉，再汇合</h3>
+
+<pre><code>cd Git/sandbox/work
+git switch main
+
+# 从 main 拉出 merge-demo，提交一次
+git switch -c merge-demo
+echo "merge 演示" &gt;&gt; notes.md
+git add notes.md
+git commit -m "docs: merge 演示提交"
+
+# 回到 main，也提交一次（制造分叉）
+git switch main
+echo "main 前进" &gt;&gt; README.md
+git add README.md
+git commit -m "docs: main 前进"
+
+git log --oneline --graph --all
+
+# 合并，并直接给出提交信息，避免打开编辑器
+git merge merge-demo -m "merge: 合并 merge-demo"
+
+git log --oneline --graph --all
+# 应看到一个 merge commit，父提交有两条线</code></pre>
+
+<h3>rebase：把提交搬到新基底</h3>
+
+<pre><code># 从 main 拉出 rebase-demo，提交一次，记下哈希
+git switch -c rebase-demo
+echo "rebase 演示" &gt;&gt; notes.md
+git add notes.md
+git commit -m "docs: rebase 演示提交"
+git log --oneline -1
+
+# main 再前进一次
+git switch main
+echo "main 又前进" &gt;&gt; README.md
+git add README.md
+git commit -m "docs: main 又前进"
+
+# 回到 rebase-demo，重放到 main 之后
+git switch rebase-demo
+git rebase main
+
+git log --oneline -1          # 哈希变了
+git log --oneline --graph --all
+# 应是一条直线，rebase-demo 接在 main 之后</code></pre>
+
+<p><b>要观察的：</b>merge 之后历史有分叉与汇合点；rebase 之后你的提交换了哈希，但历史是一条直线。两种操作都保留了你和 main 的改动，只是讲述方式不同。</p>
+
+<div class="callout">
+  <b>思考题：</b>如果 <code>rebase-demo</code> 已经推送到远程，再执行上面的 rebase，下一次 push 会发生什么？答案在第三课：远端有旧提交，你的新历史不是它的后代，于是 non-fast-forward。只有独占分支才考虑 <code>--force-with-lease</code>。
+</div>
+
+<h2>9. 自测</h2>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1 · 什么情况下 merge 会 fast-forward？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">两边都新增了不同的提交</button>
+    <button data-choice="b" type="button">目标分支是源分支的祖先</button>
+    <button data-choice="c" type="button">源分支已经推送到远端</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2 · merge commit 的特殊之处是什么？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">它没有父提交，是历史起点</button>
+    <button data-choice="b" type="button">它有两个或更多父提交</button>
+    <button data-choice="c" type="button">它只保存差异，不保存快照</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3 · rebase 之后，被重放的提交哈希为什么变了？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">提交时间被强制改成当前时间</button>
+    <button data-choice="b" type="button">父提交变了，内容摘要随之重算</button>
+    <button data-choice="c" type="button">作者信息被替换成当前用户</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4 · 哪条是 rebase 的金色法则？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">只 rebase 已经推送的公共分支</button>
+    <button data-choice="b" type="button">不要 rebase 别人可能基于其工作的提交</button>
+    <button data-choice="c" type="button">rebase 前必须先 merge 一次</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score"></p>
+
+<h2>10. 主要资源</h2>
+
+<ul>
+  <li><a href="https://git-scm.com/book/zh/v2/Git-分支-分支的新建与合并" target="_blank" rel="noopener">Pro Git 中文版 · 3.2 分支的新建与合并</a>——fast-forward 与 merge commit 的原始图解。</li>
+  <li><a href="https://git-scm.com/book/zh/v2/Git-分支-分支的变基" target="_blank" rel="noopener">Pro Git 中文版 · 3.6 分支的变基</a>——rebase 机制与金色法则的出处。</li>
+  <li><a href="https://www.atlassian.com/git/tutorials/merging-vs-rebasing" target="_blank" rel="noopener">Atlassian · Merging vs. Rebasing</a>——工程团队视角的取舍，读完后你会有自己的判断。</li>
+  <li><a href="https://learngitbranching.js.org/?locale=zh_CN" target="_blank" rel="noopener">Learn Git Branching</a>——在浏览器里反复练 merge / rebase，直到不用想。</li>
+</ul>
+
+<div class="callout teacher">
+  <b>四节课到这里闭环了：</b>快照与指针（0001）→ 三区与远程（0002）→ 推送被拒急救（0003）→ merge/rebase（0004）。接下来最值钱的动作，是在你自己的项目上走一遍：<code>git init</code> → commit → 建 GitHub 仓库 → <code>push -u</code>。有任何一步不确定，先问我，别靠猜。速查入口：<a href="../reference/glossary.html">术语表</a> · <a href="../reference/push-rescue.html">推送急救卡</a>。
+</div>
+
+<nav class="lesson-nav">
+  <a href="0003-push-rejected-rescue.html">← 上一课：推送被拒急救</a> ·
+  <a href="../reference/glossary.html">术语表</a> ·
+  <a href="../README.md">Git 长文</a>
+</nav>
+
+<script src="../assets/quiz.js"></script>
+<script>
+  var QUIZ_CONFIG = [
+    {
+      correct: "b",
+      okMsg: "对。main 是 feature 的祖先时，只需把 main 指针前移。",
+      errMsg: "快进的条件是「没有分叉」：目标分支必须停在源分支的祖先上。"
+    },
+    {
+      correct: "b",
+      okMsg: "对。merge commit 把两条历史汇到一起，所以至少两个父提交。",
+      errMsg: "merge commit 不是起点；正因为它有多个父提交，才叫合并。"
+    },
+    {
+      correct: "b",
+      okMsg: "父提交变了，提交对象的摘要就会重算，哈希自然全变。",
+      errMsg: "rebase 不改作者，也不只改时间；关键是父提交换了。"
+    },
+    {
+      correct: "b",
+      okMsg: "对。判断标准是「别人是否可能基于这些提交工作」。",
+      errMsg: "公共分支恰恰不能 rebase；金色法则保护的是共享历史。"
+    }
+  ];
+  initQuizzes(QUIZ_CONFIG, "score");
+</script>
+<script src="../assets/diagram-tabs.js"></script>
+<script src="../assets/zoomable-figure.js"></script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Git 的四个区域与远程地图",
+    "subtitle": "origin/main 只是本地缓存的远程位置，不是远程本身",
+    "locale": "zh-CN",
+    "output": "Git/assets/remote-model.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "worktree",
+      "type": "frontend",
+      "label": "工作区",
+      "sublabel": "Working tree",
+      "tag": "你正在编辑的文件",
+      "pos": [40, 80],
+      "size": [150, 70]
+    },
+    {
+      "id": "index",
+      "type": "database",
+      "label": "暂存区",
+      "sublabel": "Index / Staging area",
+      "tag": "下一次 commit 的内容",
+      "pos": [280, 80],
+      "size": [160, 70]
+    },
+    {
+      "id": "local",
+      "type": "backend",
+      "label": "本地仓库",
+      "sublabel": "Local repository (.git)",
+      "tag": "HEAD → main",
+      "pos": [540, 80],
+      "size": [180, 70]
+    },
+    {
+      "id": "originmain",
+      "type": "external",
+      "label": "origin/main",
+      "sublabel": "远程跟踪分支（缓存）",
+      "tag": "上次同步时的远程位置",
+      "pos": [540, 210],
+      "size": [180, 60]
+    },
+    {
+      "id": "remote",
+      "type": "external",
+      "label": "远程仓库",
+      "sublabel": "GitHub origin / main",
+      "tag": "真正共享的那一份",
+      "pos": [820, 80],
+      "size": [180, 70]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "你的电脑（本地）",
+      "wraps": ["worktree", "index", "local", "originmain"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "add",
+      "from": "worktree",
+      "to": "index",
+      "label": "git add",
+      "variant": "emphasis"
+    },
+    {
+      "id": "commit",
+      "from": "index",
+      "to": "local",
+      "label": "git commit",
+      "variant": "emphasis"
+    },
+    {
+      "id": "push",
+      "from": "local",
+      "to": "remote",
+      "label": "git push"
+    },
+    {
+      "id": "fetch",
+      "from": "remote",
+      "to": "originmain",
+      "label": "git fetch 刷新地图",
+      "fromSide": "bottom",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "四个区域",
+      "items": [
+        "工作区：你正在编辑的文件",
+        "暂存区：下一次 commit 的候选内容",
+        "本地仓库：完整历史，离线也能查",
+        "远程仓库：共享副本，不是更高一级"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "origin/main 是什么",
+      "items": [
+        "它是本地仓库里的远程跟踪分支（remote-tracking branch）",
+        "只记录上次 fetch / push 时远程 main 的位置",
+        "它不会自动跟着 GitHub 变；fetch 才刷新",
+        "git status 的 ahead / behind 就是拿它做比较"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "pull 不是魔法",
+      "items": [
+        "pull = fetch + merge（或 rebase）",
+        "fetch 只更新 origin/main，不碰工作区",
+        "merge / rebase 才可能改工作区、产生冲突",
+        "先 fetch 看一眼，再决定 pull 的方式"
+      ]
+    }
+  ]
+}

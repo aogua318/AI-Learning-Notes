@@ -4,3 +4,5 @@
 __pycache__/
 Git/sandbox/
 target/
+.qoder/
+.archify/

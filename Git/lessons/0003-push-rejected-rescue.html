@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第三课：推送被拒急救 — Git</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0003</span>
+  <span>预计 15 分钟</span>
+  <span>前置：第二课</span>
+  <span>对应长文：README §9</span>
+</div>
+
+<h1>第三课：推送被拒急救——non-fast-forward</h1>
+
+<div class="callout teacher">
+  <b>这一课只拿一个东西：</b>看到 <code>! [rejected] ... (fetch first)</code> 不再慌，能按「fetch → 看分叉 → 选 rebase 或 merge → 再 push」四步走完，并且知道为什么不该顺手 <code>--force</code>。
+</div>
+
+<h2>1. 报错长什么样</h2>
+
+<p>最常见的一版是这样（哈希、分支名会不同）：</p>
+
+<pre><code>To github.com:you/AI-Learning-Notes.git
+ ! [rejected]        main -&gt; main (fetch first)
+error: failed to push some refs to 'github.com:you/AI-Learning-Notes.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.</code></pre>
+
+<p>另一版会写 <code>(non-fast-forward)</code>。两者说的是同一件事：<b>远端的 main 上有你本地历史里没有的提交</b>。如果 Git 接受了这次推送，那些提交就会从 main 的历史里消失——所以它拒绝覆盖，让你先合并。</p>
+
+<div class="callout">
+  <b>这不是权限问题，也不是网络问题。</b>它恰恰是 Git 在保护协作历史。真正要检查的是：<b>远端多了什么？我本地多了什么？</b>
+</div>
+
+<h2>2. 先诊断，别急着动手</h2>
+
+<pre><code># 第一步永远是取回远程的新位置，但不动你的工作区
+git fetch origin
+
+# 第二步：看领先/落后
+git status -sb
+# ## main...origin/main [ahead 1, behind 1]
+
+# 第三步：看两条历史在哪里分叉
+git log --oneline --graph --decorate --all</code></pre>
+
+<p>把结果归到下面三种情况，处理方式完全不同：</p>
+
+<table>
+  <tr><th>status 显示</th><th>含义</th><th>首选动作</th></tr>
+  <tr><td>只有 <code>behind N</code></td><td>你没有任何新提交，只是落后</td><td><code>git pull --ff-only</code>，然后 push</td></tr>
+  <tr><td><code>ahead 1, behind 1</code></td><td>两边各有新提交，历史分叉</td><td><code>git pull --rebase</code> 或 <code>git pull --no-rebase</code></td></tr>
+  <tr><td>你刚 amend / rebase 过</td><td>你主动改写了本地历史</td><td>只有在你独占的分支上，才考虑 <code>--force-with-lease</code></td></tr>
+</table>
+
+<div class="callout warn">
+  <b>别在没 fetch 的时候猜。</b><code>git status</code> 里的 <code>origin/main</code> 可能已经过时；先 fetch，地图才是新的。
+</div>
+
+<h2>3. 两条正路：rebase 还是 merge</h2>
+
+<h3>路线 A：<code>git pull --rebase</code>（个人分支、想保持线性）</h3>
+
+<p>它先 fetch，再把<b>你本地独有的提交</b>逐个「重放」到 <code>origin/main</code> 的最新提交之后。结果是一条直线，但你的本地提交会换新哈希——因为父提交变了。</p>
+
+<pre><code>git pull --rebase
+# 如果一路顺利：
+git push
+
+# 如果同一处被两边修改，会停在冲突：
+git status                  # 看 both modified 的文件
+# 手工编辑，删掉 &lt;&lt;&lt;&lt;&lt;&lt;&lt; / ======= / &gt;&gt;&gt;&gt;&gt;&gt;&gt; 标记
+git add &lt;解决后的文件&gt;
+git rebase --continue
+
+# 不想继续了，回到 rebase 之前
+git rebase --abort</code></pre>
+
+<h3>路线 B：<code>git pull --no-rebase</code>（共享分支、想保留真实分叉）</h3>
+
+<p>它先 fetch，再把你本地 main 与 <code>origin/main</code> 合并，生成一个<b>双亲的 merge commit</b>。历史会分叉再汇合，但没有改写任何已有提交，适合多人共用的分支。</p>
+
+<pre><code>git pull --no-rebase
+# 冲突时同样手工解决，然后：
+git add &lt;解决后的文件&gt;
+git commit                  # 完成这次 merge
+
+# 放弃这次 merge
+git merge --abort</code></pre>
+
+<table>
+  <tr><th></th><th><code>pull --rebase</code></th><th><code>pull --no-rebase</code></th></tr>
+  <tr><td>历史形状</td><td>一条直线</td><td>保留分叉 + 合并点</td></tr>
+  <tr><td>是否改写本地提交</td><td>是，哈希会变</td><td>否</td></tr>
+  <tr><td>适合</td><td>尚未推送的个人提交</td><td>已共享的分支</td></tr>
+  <tr><td>风险</td><td>重放已共享的提交会害到别人</td><td>历史多一个合并节点</td></tr>
+</table>
+
+<h2>4. 为什么不要顺手 <code>--force</code></h2>
+
+<p><code>git push --force</code> 的意思是「别检查祖先关系，直接用我的覆盖远端」。它会把远端 main 指向你的提交，<b>别人已经推送、你本地没有的提交就从分支历史上掉下去了</b>。即使对象还能在 reflog 里找到一段时间，对协作者来说历史已经被改写。</p>
+
+<p><code>--force-with-lease</code> 多做一道检查：<b>远端的当前值是否仍等于我上次 fetch 时看到的值</b>。如果这期间别人又推了新提交，它会拒绝，避免你把人家的提交一起覆盖。但它仍然是在改写历史——只适用于<b>你独占的功能分支</b>。</p>
+
+<pre><code># 只在「这个分支只有我在用」且「确实需要改写历史」时
+git push --force-with-lease
+
+# 绝不要对 main / 共享分支这么做
+# git push --force origin main   ← 不要</code></pre>
+
+<div class="callout warn">
+  <b><code>--force-with-lease</code> 不是免死金牌。</b>它防的是「你 fetch 之后别人又推了」；它不防「你不看历史就强推」。强推前先用 <code>git log --graph --all</code> 确认远端没有你要保留的提交。
+</div>
+
+<h2>5. 一张图看懂整条急救路径</h2>
+
+<figure class="archify-figure wide figure-zoom" data-zoomable>
+  <svg viewBox="0 0 1376 326" data-reader-fit="intrinsic-height" data-lifecycle-layout="main-path-v3" role="img" lang="zh-CN" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="classic" data-quality-profile="showcase" data-motion-choreography="walk">
+    <title id="archify-diagram-title">推送被拒之后：一条可恢复的路径</title>
+    <desc id="archify-diagram-description">non-fast-forward 不是终点，先 fetch 再把你的提交重放到新基点上</desc>
+    <defs>
+      <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+      </marker>
+      <marker id="arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+      </marker>
+      <marker id="arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+      </marker>
+      <marker id="arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+      </marker>
+      <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+        <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+      </pattern>
+    </defs>
+
+    <rect width="100%" height="100%" fill="url(#grid)" />
+
+    <g data-graph-role="automatic-crossover" style="--step:0">
+      <path data-graph-role="automatic-crossover-underlay" d="M 198 60 L 270 60" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="local" data-edge-to="push" data-edge-label="执行" data-edge-key="0" data-edge-id="local-push" data-composition-points="198,60;270,60" data-composition-crossover="halo" data-composition-independent="true" d="M 198 60 L 270 60" class="a-emphasis" data-animate="edge" style="--step:0" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+    </g>
+    <g data-graph-role="automatic-crossover" style="--step:1">
+      <path data-graph-role="automatic-crossover-underlay" d="M 410 60 L 482 60" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="push" data-edge-to="rejected" data-edge-label="拒绝" data-edge-key="1" data-edge-id="push-rejected" data-composition-points="410,60;482,60" data-composition-crossover="halo" data-composition-independent="true" d="M 410 60 L 482 60" class="a-emphasis" data-animate="edge" style="--step:1" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+    </g>
+    <g data-graph-role="automatic-crossover" style="--step:2">
+      <path data-graph-role="automatic-crossover-underlay" d="M 622 60 L 696 60" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="rejected" data-edge-to="fetch" data-edge-label="取回 C" data-edge-key="2" data-edge-id="rejected-fetch" data-composition-points="622,60;696,60" data-composition-crossover="halo" data-composition-independent="true" d="M 622 60 L 696 60" class="a-emphasis" data-animate="edge" style="--step:2" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+    </g>
+    <g data-graph-role="automatic-crossover" style="--step:3">
+      <path data-graph-role="automatic-crossover-underlay" d="M 870 60 L 942 60" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="fetch" data-edge-to="rebase" data-edge-label="重放" data-edge-key="3" data-edge-id="fetch-rebase" data-composition-points="870,60;942,60" data-composition-crossover="halo" data-composition-independent="true" d="M 870 60 L 942 60" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+    </g>
+    <g data-graph-role="automatic-crossover" style="--step:4">
+      <path data-graph-role="automatic-crossover-underlay" d="M 1108 60 L 1180 60" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="rebase" data-edge-to="pushed" data-edge-label="推送" data-edge-key="4" data-edge-id="rebase-pushed" data-composition-points="1108,60;1180,60" data-composition-crossover="halo" data-composition-independent="true" d="M 1108 60 L 1180 60" class="a-emphasis" data-animate="edge" style="--step:4" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+    </g>
+    <g data-graph-role="automatic-crossover" style="--step:5">
+      <path data-graph-role="automatic-crossover-underlay" d="M 1025 92 L 1025 114 Q 1025 126 1037 126 L 1112.5 126 Q 1124.5 126 1124.5 138 L 1124.5 184" fill="none" stroke="var(--mask)" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="rebase" data-edge-to="conflict" data-edge-label="同一处冲突" data-edge-key="5" data-edge-id="rebase-conflict" data-composition-points="1025,92;1025,126;1124.5,126;1124.5,184" data-composition-crossover="halo" data-composition-independent="true" d="M 1025 92 L 1025 114 Q 1025 126 1037 126 L 1112.5 126 Q 1124.5 126 1124.5 138 L 1124.5 184" class="a-dashed" data-animate="edge" style="--step:5" stroke-width="1.2" marker-end="url(#arrowhead-dashed)"/>
+    </g>
+    <g data-graph-role="automatic-crossover" style="--step:6">
+      <path data-graph-role="automatic-crossover-underlay" d="M 1150.5 184 L 1150.5 138 Q 1150.5 126 1162.5 126 L 1238 126 Q 1250 126 1250 114 L 1250 92" fill="none" stroke="var(--mask)" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="conflict" data-edge-to="pushed" data-edge-label="解决后 --continue" data-edge-key="6" data-edge-id="conflict-pushed" data-composition-points="1150.5,184;1150.5,126;1250,126;1250,92" data-composition-crossover="halo" data-composition-independent="true" d="M 1150.5 184 L 1150.5 138 Q 1150.5 126 1162.5 126 L 1238 126 Q 1250 126 1250 114 L 1250 92" class="a-default" data-animate="edge" style="--step:6" stroke-width="1.2" marker-end="url(#arrowhead)"/>
+    </g>
+    <g data-graph-role="automatic-crossover" style="--step:7">
+      <path data-graph-role="automatic-crossover-underlay" d="M 552 92 L 552 184" fill="none" stroke="var(--mask)" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+      <path data-edge-from="rejected" data-edge-to="force" data-edge-label="图省事" data-edge-key="7" data-edge-id="rejected-force" data-composition-points="552,92;552,184" data-composition-crossover="halo" data-composition-independent="true" d="M 552 92 L 552 184" class="a-security" data-animate="edge" style="--step:7" stroke-width="1.2" marker-end="url(#arrowhead-security)"/>
+    </g>
+
+    <g id="node-local" data-node-id="local" data-node-label="本地提交 D" tabindex="0" role="button" aria-label="聚焦本地提交 D，基于 B，远程已有 C, 生命周期状态" aria-pressed="false" data-node-kind="start" data-node-sublabel="基于 B，远程已有 C" data-node-tag="你的仓库" data-node-context="生命周期状态">
+      <title>本地提交 D · 基于 B，远程已有 C · 生命周期状态 · 你的仓库</title>
+      <rect x="56" y="28" width="142" height="64" rx="8" class="c-mask"/>
+      <rect x="56" y="28" width="142" height="64" rx="8" class="c-frontend" data-animate="node" style="--step:0" stroke-width="1.5"/>
+      <g aria-hidden="true" data-lifecycle-initial-marker=""><circle cx="30" cy="60" r="4.5" style="fill: var(--arrow-emphasis)"/><path d="M 34.5 60 L 49 60" class="a-emphasis" stroke-width="1.4"/><path d="M 48 56.5 L 55 60 L 48 63.5 Z" style="fill: var(--arrow-emphasis)"/></g>
+      <text data-detail="fine" x="79" y="42" class="t-frontend" font-size="8" font-weight="700">01</text>
+      <text data-node-label="" data-detail-anchor="" x="127.6" y="51" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">本地提交 D</text>
+      <text data-detail="context" x="127" y="68" class="t-muted" font-size="9" text-anchor="middle">基于 B，远程已有 C</text>
+      <text data-detail="fine" x="127" y="83" class="t-frontend" font-size="8" text-anchor="middle">你的仓库</text>
+    </g>
+
+    <g id="node-push" data-node-id="push" data-node-label="git push" tabindex="0" role="button" aria-label="聚焦git push，远程检查祖先关系, 生命周期状态" aria-pressed="false" data-node-kind="decision" data-node-sublabel="远程检查祖先关系" data-node-tag="请求" data-node-context="生命周期状态">
+      <title>git push · 远程检查祖先关系 · 生命周期状态 · 请求</title>
+      <rect x="270" y="28" width="140" height="64" rx="8" class="c-mask"/>
+      <rect x="270" y="28" width="140" height="64" rx="8" class="c-database" data-animate="node" style="--step:1" stroke-width="1.5"/>
+      <g aria-hidden="true" data-semantic-sigil="decision" class="semantic-sigil s-database" transform="translate(276 34) scale(0.6875)">
+        <path d="M8 2.2 13.8 8 8 13.8 2.2 8Z"/>
+      </g>
+      <text data-detail="fine" x="293" y="42" class="t-database" font-size="8" font-weight="700">02</text>
+      <text data-node-label="" data-detail-anchor="" x="340" y="51" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">git push</text>
+      <text data-detail="context" x="340" y="68" class="t-muted" font-size="9" text-anchor="middle">远程检查祖先关系</text>
+      <text data-detail="fine" x="340" y="83" class="t-database" font-size="8" text-anchor="middle">请求</text>
+    </g>
+
+    <g id="node-rejected" data-node-id="rejected" data-node-label="推送被拒" tabindex="0" role="button" aria-label="聚焦推送被拒，远程历史里没有 D, 生命周期状态" aria-pressed="false" data-node-kind="failure" data-node-sublabel="远程历史里没有 D" data-node-tag="non-fast-forward" data-node-context="生命周期状态">
+      <title>推送被拒 · 远程历史里没有 D · 生命周期状态 · non-fast-forward</title>
+      <rect x="482" y="28" width="140" height="64" rx="8" class="c-mask"/>
+      <rect x="482" y="28" width="140" height="64" rx="8" class="c-security" data-animate="node" style="--step:2" stroke-width="1.5"/>
+      <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(488 34) scale(0.6875)">
+        <circle cx="8" cy="8" r="5.3"/>
+        <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+      </g>
+      <text data-detail="fine" x="505" y="42" class="t-security" font-size="8" font-weight="700">03</text>
+      <text data-node-label="" data-detail-anchor="" x="552" y="51" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">推送被拒</text>
+      <text data-detail="context" x="552" y="68" class="t-muted" font-size="9" text-anchor="middle">远程历史里没有 D</text>
+      <text data-detail="fine" x="552" y="83" class="t-security" font-size="8" text-anchor="middle">non-fast-forward</text>
+    </g>
+
+    <g id="node-fetch" data-node-id="fetch" data-node-label="git fetch" tabindex="0" role="button" aria-label="聚焦git fetch，下载 C，刷新 origin/main, 生命周期状态" aria-pressed="false" data-node-kind="active" data-node-sublabel="下载 C，刷新 origin/main" data-node-tag="安全" data-node-context="生命周期状态">
+      <title>git fetch · 下载 C，刷新 origin/main · 生命周期状态 · 安全</title>
+      <rect x="696" y="28" width="174" height="64" rx="8" class="c-mask"/>
+      <rect x="696" y="28" width="174" height="64" rx="8" class="c-frontend" data-animate="node" style="--step:3" stroke-width="1.5"/>
+      <text data-detail="fine" x="719" y="42" class="t-frontend" font-size="8" font-weight="700">04</text>
+      <text data-node-label="" data-detail-anchor="" x="783" y="51" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">git fetch</text>
+      <text data-detail="context" x="783" y="68" class="t-muted" font-size="9" text-anchor="middle">下载 C，刷新 origin/main</text>
+      <text data-detail="fine" x="783" y="83" class="t-frontend" font-size="8" text-anchor="middle">安全</text>
+    </g>
+
+    <g id="node-rebase" data-node-id="rebase" data-node-label="git pull --rebase" tabindex="0" role="button" aria-label="聚焦git pull --rebase，把 D 重放到 C 之后, 生命周期状态" aria-pressed="false" data-node-kind="decision" data-node-sublabel="把 D 重放到 C 之后" data-node-tag="重写本地历史" data-node-context="生命周期状态">
+      <title>git pull --rebase · 把 D 重放到 C 之后 · 生命周期状态 · 重写本地历史</title>
+      <rect x="942" y="28" width="166" height="64" rx="8" class="c-mask"/>
+      <rect x="942" y="28" width="166" height="64" rx="8" class="c-database" data-animate="node" style="--step:4" stroke-width="1.5"/>
+      <g aria-hidden="true" data-semantic-sigil="decision" class="semantic-sigil s-database" transform="translate(948 34) scale(0.6875)">
+        <path d="M8 2.2 13.8 8 8 13.8 2.2 8Z"/>
+      </g>
+      <text data-detail="fine" x="965" y="42" class="t-database" font-size="8" font-weight="700">05</text>
+      <text data-node-label="" data-detail-anchor="" x="1038.8" y="51" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">git pull --rebase</text>
+      <text data-detail="context" x="1025" y="68" class="t-muted" font-size="9" text-anchor="middle">把 D 重放到 C 之后</text>
+      <text data-detail="fine" x="1025" y="83" class="t-database" font-size="8" text-anchor="middle">重写本地历史</text>
+    </g>
+
+    <g id="node-pushed" data-node-id="pushed" data-node-label="推送成功" tabindex="0" role="button" aria-label="聚焦推送成功，D&#39; 接在 C 之后, 生命周期状态" aria-pressed="false" data-node-kind="success" data-node-sublabel="D&#39; 接在 C 之后" data-node-tag="fast-forward" data-node-context="生命周期状态">
+      <title>推送成功 · D&#39; 接在 C 之后 · 生命周期状态 · fast-forward</title>
+      <rect x="1180" y="28" width="140" height="64" rx="8" class="c-mask"/>
+      <rect x="1180" y="28" width="140" height="64" rx="8" class="c-backend" data-animate="node" style="--step:5" stroke-width="1.5"/>
+      <rect x="1183" y="31" width="134" height="58" rx="5" class="c-backend" style="fill: none" stroke-width="1"/>
+      <g aria-hidden="true" data-semantic-sigil="success" class="semantic-sigil s-backend" transform="translate(1186 34) scale(0.6875)">
+        <circle cx="8" cy="8" r="5.3"/>
+        <path d="m5.2 8 1.8 1.8 3.8-4"/>
+      </g>
+      <text data-detail="fine" x="1203" y="42" class="t-backend" font-size="8" font-weight="700">06</text>
+      <text data-node-label="" data-detail-anchor="" x="1250" y="51" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">推送成功</text>
+      <text data-detail="context" x="1250" y="68" class="t-muted" font-size="9" text-anchor="middle">D&#39; 接在 C 之后</text>
+      <text data-detail="fine" x="1250" y="83" class="t-backend" font-size="8" text-anchor="middle">fast-forward</text>
+    </g>
+
+    <g id="node-conflict" data-node-id="conflict" data-node-label="rebase 冲突" tabindex="0" role="button" aria-label="聚焦rebase 冲突，同一处被两边修改, 生命周期状态" aria-pressed="false" data-node-kind="waiting" data-node-sublabel="同一处被两边修改" data-node-tag="需手工解决" data-node-context="生命周期状态">
+      <title>rebase 冲突 · 同一处被两边修改 · 生命周期状态 · 需手工解决</title>
+      <rect x="1067.5" y="184" width="140" height="64" rx="8" class="c-mask"/>
+      <rect x="1067.5" y="184" width="140" height="64" rx="8" class="c-cloud" data-animate="node" style="--step:6" stroke-width="1.5"/>
+      <g aria-hidden="true" data-semantic-sigil="waiting" class="semantic-sigil s-cloud" transform="translate(1073.5 190) scale(0.6875)">
+        <path d="M4 2.5h8M4 13.5h8M5 3c0 2.8 2 3.2 3 5-1 1.8-3 2.2-3 5M11 3c0 2.8-2 3.2-3 5 1 1.8 3 2.2 3 5"/>
+      </g>
+      <text data-node-label="" data-detail-anchor="" x="1137.5" y="207" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">rebase 冲突</text>
+      <text data-detail="context" x="1137.5" y="224" class="t-muted" font-size="9" text-anchor="middle">同一处被两边修改</text>
+      <text data-detail="fine" x="1137.5" y="239" class="t-cloud" font-size="8" text-anchor="middle">需手工解决</text>
+    </g>
+
+    <g id="node-force" data-node-id="force" data-node-label="git push --force" tabindex="0" role="button" aria-label="聚焦git push --force，远程 C 被抹掉, 生命周期状态" aria-pressed="false" data-node-kind="failure" data-node-sublabel="远程 C 被抹掉" data-node-tag="危险" data-node-context="生命周期状态">
+      <title>git push --force · 远程 C 被抹掉 · 生命周期状态 · 危险</title>
+      <rect x="480.5" y="184" width="143" height="64" rx="8" class="c-mask"/>
+      <rect x="480.5" y="184" width="143" height="64" rx="8" class="c-security" data-animate="node" style="--step:8" stroke-width="1.5"/>
+      <rect x="483.5" y="187" width="137" height="58" rx="5" class="c-security" style="fill: none" stroke-width="1"/>
+      <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(486.5 190) scale(0.6875)">
+        <circle cx="8" cy="8" r="5.3"/>
+        <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+      </g>
+      <text data-node-label="" data-detail-anchor="" x="557.1" y="207" class="t-primary" font-size="12" font-weight="600" text-anchor="middle">git push --force</text>
+      <text data-detail="context" x="552" y="224" class="t-muted" font-size="9" text-anchor="middle">远程 C 被抹掉</text>
+      <text data-detail="fine" x="552" y="239" class="t-security" font-size="8" text-anchor="middle">危险</text>
+    </g>
+
+    <g data-detail="context" data-edge-from="local" data-edge-to="push" data-edge-label="执行" data-edge-key="0" data-edge-id="local-push">
+      <rect x="216" y="38" width="36" height="16" rx="4" class="c-mask"/>
+      <text x="234" y="49.5" class="t-edge-emphasis" font-size="10" text-anchor="middle">执行</text>
+    </g>
+    <g data-detail="context" data-edge-from="push" data-edge-to="rejected" data-edge-label="拒绝" data-edge-key="1" data-edge-id="push-rejected">
+      <rect x="428" y="38" width="36" height="16" rx="4" class="c-mask"/>
+      <text x="446" y="49.5" class="t-edge-emphasis" font-size="10" text-anchor="middle">拒绝</text>
+    </g>
+    <g data-detail="context" data-edge-from="rejected" data-edge-to="fetch" data-edge-label="取回 C" data-edge-key="2" data-edge-id="rejected-fetch">
+      <rect x="635" y="38" width="48" height="16" rx="4" class="c-mask"/>
+      <text x="659" y="49.5" class="t-edge-emphasis" font-size="10" text-anchor="middle">取回 C</text>
+    </g>
+    <g data-detail="context" data-edge-from="fetch" data-edge-to="rebase" data-edge-label="重放" data-edge-key="3" data-edge-id="fetch-rebase">
+      <rect x="888" y="38" width="36" height="16" rx="4" class="c-mask"/>
+      <text x="906" y="49.5" class="t-edge-emphasis" font-size="10" text-anchor="middle">重放</text>
+    </g>
+    <g data-detail="context" data-edge-from="rebase" data-edge-to="pushed" data-edge-label="推送" data-edge-key="4" data-edge-id="rebase-pushed">
+      <rect x="1126" y="38" width="36" height="16" rx="4" class="c-mask"/>
+      <text x="1144" y="49.5" class="t-edge-emphasis" font-size="10" text-anchor="middle">推送</text>
+    </g>
+    <g data-detail="context" data-edge-from="rebase" data-edge-to="conflict" data-edge-label="同一处冲突" data-edge-key="5" data-edge-id="rebase-conflict">
+      <rect x="1046.5" y="147" width="72" height="16" rx="4" class="c-mask"/>
+      <text x="1082.5" y="158.5" class="t-edge-dashed" font-size="10" text-anchor="middle">同一处冲突</text>
+    </g>
+    <g data-detail="context" data-edge-from="conflict" data-edge-to="pushed" data-edge-label="解决后 --continue" data-edge-key="6" data-edge-id="conflict-pushed">
+      <rect x="1156.5" y="147" width="114" height="16" rx="4" class="c-mask"/>
+      <text x="1213.5" y="158.5" class="t-muted" font-size="10" text-anchor="middle">解决后 --continue</text>
+    </g>
+    <g data-detail="context" data-edge-from="rejected" data-edge-to="force" data-edge-label="图省事" data-edge-key="7" data-edge-id="rejected-force">
+      <rect x="498" y="130" width="48" height="16" rx="4" class="c-mask"/>
+      <text x="522" y="141.5" class="t-edge-security" font-size="10" text-anchor="middle">图省事</text>
+    </g>
+
+    <g data-legend="" data-legend-bridge="">
+      <text x="40" y="274" class="t-primary" font-size="12" font-weight="650">图例</text>
+      <g data-legend-semantic-kind="start" data-legend-kind="start" data-legend-label="起点" data-legend-x="40" data-legend-baseline="294" data-legend-width="80">
+        <circle cx="44.5" cy="290.5" r="4.5" style="fill: var(--arrow-emphasis)"/><path d="M 49 290.5 L 58 290.5" class="a-emphasis" stroke-width="1.4"/><path d="M 57 287 L 64 290.5 L 57 294 Z" style="fill: var(--arrow-emphasis)"/>
+        <text x="74" y="294" class="t-muted" font-size="10" font-weight="500">起点</text>
+      </g>
+      <g data-legend-semantic-kind="active" data-legend-kind="active" data-legend-label="进行中" data-legend-x="142" data-legend-baseline="294" data-legend-width="81">
+        <rect x="142" y="286" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
+        <text x="164" y="294" class="t-muted" font-size="10" font-weight="500">进行中</text>
+      </g>
+      <g data-legend-semantic-kind="waiting" data-legend-kind="waiting" data-legend-label="等待" data-legend-x="245" data-legend-baseline="294" data-legend-width="68">
+        <rect x="245" y="286" width="14" height="9" rx="2" class="c-cloud" stroke-width="1"/>
+        <text x="267" y="294" class="t-muted" font-size="10" font-weight="500">等待</text>
+      </g>
+      <g data-legend-semantic-kind="decision" data-legend-kind="decision" data-legend-label="决策" data-legend-x="335" data-legend-baseline="294" data-legend-width="68">
+        <rect x="335" y="286" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+        <text x="357" y="294" class="t-muted" font-size="10" font-weight="500">决策</text>
+      </g>
+      <g data-legend-semantic-kind="success" data-legend-kind="success" data-legend-label="成功" data-legend-x="425" data-legend-baseline="294" data-legend-width="68">
+        <rect x="425" y="286" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+        <text x="447" y="294" class="t-muted" font-size="10" font-weight="500">成功</text>
+      </g>
+      <g data-legend-semantic-kind="failure" data-legend-kind="failure" data-legend-label="失败 / 退出" data-legend-x="515" data-legend-baseline="294" data-legend-width="112">
+        <rect x="515" y="286" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+        <text x="537" y="294" class="t-muted" font-size="10" font-weight="500">失败 / 退出</text>
+      </g>
+      <g data-legend-semantic-kind="final" data-legend-x="649" data-legend-baseline="294" data-legend-width="49">
+        <rect x="649" y="286" width="14" height="9" rx="2" class="c-external" stroke-width="1"/><rect x="651.5" y="288.5" width="9" height="4" rx="1" class="c-external" style="fill: none" stroke-width="0.8"/>
+        <text x="673" y="294" class="t-muted" font-size="10" font-weight="500">终态</text>
+      </g>
+    </g>
+  </svg>
+  <figcaption>图 3 · 推送被拒之后的可恢复路径。红色支路是「图省事」的强推；虚线支路是 rebase 冲突。</figcaption>
+  <button class="zoom-badge" type="button">⤢ 点击放大</button>
+</figure>
+
+<p class="meta">点右下角「放大」后可滚轮缩放、拖动看细节。也可以打开交互版：<a href="../assets/push-rescue.html" target="_blank" rel="noopener">推送被拒生命周期（可交互）</a>。</p>
+
+<h2>6. 沙箱练习：亲手制造一次拒绝，再救回来</h2>
+
+<div class="callout warn">
+  沙箱没搭好时，先在 <code>Git/</code> 目录运行 <code>bash git_sandbox.sh</code>。<code>--reset</code> 会删除 sandbox 内容，确认不需要保留旧练习再用。
+</div>
+
+<p>先扮演「队友」：另克隆一份远程仓库，提交并推送。</p>
+
+<pre><code>cd Git/sandbox
+git clone remote.git other
+cd other
+git config user.name "teammate"
+git config user.email "teammate@sandbox.local"
+echo "队友的修改" &gt;&gt; README.md
+git add README.md
+git commit -m "docs: 队友更新 README"
+git push origin main</code></pre>
+
+<p class="meta">如果 <code>other</code> 已存在，直接 <code>cd other &amp;&amp; git pull</code>，不要重复 clone。</p>
+
+<p>再回到你的工作仓库，制造分叉并推送：</p>
+
+<pre><code>cd ../work
+git switch main
+git push -u origin main        # 若还没设上游，先推一次
+
+echo "我的修改" &gt;&gt; notes.md
+git add notes.md
+git commit -m "docs: 我的本地修改"
+
+git push
+# 预期：! [rejected] main -&gt; main (fetch first) / non-fast-forward</code></pre>
+
+<p>现在走急救四步：</p>
+
+<pre><code># 1. 取回远程的新位置（不动工作区）
+git fetch origin
+
+# 2. 看分叉：ahead 1, behind 1
+git status -sb
+git log --oneline --graph --decorate --all
+
+# 3. 把你的提交重放到队友的提交之后
+git pull --rebase
+
+# 4. 再推
+git push
+git status -sb                 # 干净
+git log --oneline --graph --decorate --all   # 一条直线</code></pre>
+
+<p><b>要观察的：</b>第 2 步里 main 与 <code>origin/main</code> 各有一个对方没有的提交；第 3 步后，你的提交换了新哈希，接在队友的提交之后；第 4 步成功。这就是「先整合、再推送」。</p>
+
+<div class="callout">
+  <b>换一种走法：</b>把第 3 步改成 <code>git pull --no-rebase</code>，你会得到一个 merge commit，历史保留分叉。两种都正确，区别在「你想要直线，还是想保留真实合并」。第四课展开。
+</div>
+
+<h2>7. 自测</h2>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1 · 报错 <code>(fetch first)</code> 的直接原因是什么？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">本地没有配置 GitHub 凭据</button>
+    <button data-choice="b" type="button">远端有你本地没有的提交</button>
+    <button data-choice="c" type="button">本地分支名和远端不一致</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2 · 被拒后最安全的第一步是什么？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">立刻用 --force 覆盖远端</button>
+    <button data-choice="b" type="button">先 fetch，再比较两边历史</button>
+    <button data-choice="c" type="button">删除本地仓库重新 clone</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3 · 你独占的功能分支被拒，想保持线性历史，选哪个？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">git pull --rebase 后重新推送</button>
+    <button data-choice="b" type="button">git merge 后删除远程分支</button>
+    <button data-choice="c" type="button">git push --force 覆盖远端</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4 · <code>--force-with-lease</code> 比 <code>--force</code> 多检查什么？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">远端分支是否设置了保护</button>
+    <button data-choice="b" type="button">远端是否仍停在你见过的位置</button>
+    <button data-choice="c" type="button">本地提交是否已经签名</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score"></p>
+
+<h2>8. 主要资源</h2>
+
+<ul>
+  <li><a href="https://docs.github.com/en/get-started/using-git/dealing-with-non-fast-forward-errors" target="_blank" rel="noopener">GitHub Docs · Dealing with non-fast-forward errors</a>——官方急救说明，本节首选。</li>
+  <li><a href="https://git-scm.com/docs/git-push" target="_blank" rel="noopener">git-push 官方文档</a>——<code>--force-with-lease</code> 的精确定义。</li>
+  <li><a href="https://git-scm.com/book/zh/v2/Git-分支-远程分支" target="_blank" rel="noopener">Pro Git 中文版 · 3.5 远程分支</a>——为什么会被拒、fast-forward 是什么。</li>
+  <li><a href="https://ohshitgit.com/" target="_blank" rel="noopener">Oh Shit, Git!?!</a>——常见「搞砸了」场景的恢复手册，适合放在书签栏。</li>
+</ul>
+
+<div class="callout teacher">
+  <b>把这张急救卡收进书签：</b><a href="../reference/push-rescue.html">推送急救速查</a>。下次报错时先打开它，按图走一遍；有看不懂的报错行，直接贴给我。下一课讲 merge 和 rebase 的取舍——也就是今天两条路线背后的完整原理。
+</div>
+
+<nav class="lesson-nav">
+  <a href="0002-three-areas-and-remote-map.html">← 上一课：三区与远程地图</a> ·
+  <a href="../reference/push-rescue.html">推送急救卡</a> ·
+  <a href="0004-merge-vs-rebase.html">下一课：merge 还是 rebase →</a>
+</nav>
+
+<script src="../assets/quiz.js"></script>
+<script>
+  var QUIZ_CONFIG = [
+    {
+      correct: "b",
+      okMsg: "对。远端有你没有的提交，直接覆盖会丢历史，所以 Git 拒绝。",
+      errMsg: "这不是认证问题；先 fetch 看看远端比你多了什么。"
+    },
+    {
+      correct: "b",
+      okMsg: "对。fetch 只更新地图，不动工作区，是最安全的诊断起点。",
+      errMsg: "强推和重 clone 都太激进；先 fetch 看清分叉。"
+    },
+    {
+      correct: "a",
+      okMsg: "对。pull --rebase 把你的提交重放到远端之后，再 push 就是快进。",
+      errMsg: "共享分支不该强推；保持线性的正路是先 rebase 再推。"
+    },
+    {
+      correct: "b",
+      okMsg: "对。它检查远端当前值是否仍等于你上次 fetch 时看到的值。",
+      errMsg: "它不检查分支保护或签名；它防的是「你 fetch 后别人又推了」。"
+    }
+  ];
+  initQuizzes(QUIZ_CONFIG, "score");
+</script>
+<script src="../assets/zoomable-figure.js"></script>
+</body>
+</html>
