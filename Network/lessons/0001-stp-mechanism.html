@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第一课：STP 机制——环路、选举与端口角色 — Network</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0001</span>
+  <span>预计 15 分钟</span>
+  <span>前置：无</span>
+  <span>实验：lab/0001-stp-lab.md</span>
+</div>
+
+<h1>第一课：STP 机制——环路、选举与端口角色</h1>
+
+<div class="callout teacher">
+  <b>这一课只拿一个东西：</b>看到一张交换机拓扑图，能算出谁是 root、哪个端口被阻塞、为什么。你每天都在配 <code>stp priority</code>、<code>stp mode</code>，学完就知道配下去之后，网络里实际在发生什么。
+</div>
+
+<h2>1. 为什么需要 STP：环路的两个后果</h2>
+
+<p>冗余链路是必要的——一条链路断了，流量还能走另一条。但以太网交换机转发帧时<b>不看生存时间</b>：IP 包有 TTL，以太网帧没有。于是一个帧只要进了环，就会被每台交换机无休止地复制转发。后果有两个：</p>
+
+<table>
+  <tr><th>后果</th><th>机制</th></tr>
+  <tr><td><b>广播风暴</b>（broadcast storm）</td><td>广播帧、组播帧、目的 MAC 未知的单播帧都会被交换机泛洪。环里的泛洪互相叠加，指数级复制，几十秒占满整条链路带宽，正常业务全部瘫痪</td></tr>
+  <tr><td><b>MAC 地址表抖动</b>（MAC table flapping）</td><td>同一个源 MAC 的帧会从环的不同端口被各交换机「学到」，表项反复刷新、反复失效，交换机忙于更新地址表，转发起伏不定</td></tr>
+</table>
+
+<p>STP（Spanning Tree Protocol，生成树协议）的解法一句话：<b>逻辑上堵掉一部分端口，把环拆成树</b>。物理链路一条不少（冗余还在），逻辑上无环（风暴消失）。</p>
+
+<div class="callout">
+  <b>一句话记忆：</b>STP 不是「关掉备份链路」，是「让备份端口待命」——主路径断了，它立刻顶上来。
+</div>
+
+<h2>2. BPDU：交换机之间的选票</h2>
+
+<p>交换机之间靠 <b>BPDU</b>（Bridge Protocol Data Unit，桥协议数据单元）协商。root 桥每 2 秒（Hello Time）发出一次配置 BPDU（Configuration BPDU），非 root 桥收到后，把自己的信息写进去再往下游传——BPDU 每过一台交换机，路径开销就累加一次。</p>
+
+<p>BPDU 里的关键字段：</p>
+
+<table>
+  <tr><th>字段</th><th>作用</th></tr>
+  <tr><td>Root ID</td><td>发送者当前认定的 root 桥 ID（选票投给谁）</td></tr>
+  <tr><td>Root Path Cost</td><td>发送者到 root 的累计路径开销（我离 root 有多远）</td></tr>
+  <tr><td>Bridge ID</td><td>发送这个 BPDU 的桥自己的 ID（我是谁）</td></tr>
+  <tr><td>Port ID</td><td>发送 BPDU 的端口（我从哪个口发出的）</td></tr>
+  <tr><td>Message Age / Max Age / Hello Time / Forward Delay</td><td>计时器：BPDU 寿命、老化上限、心跳间隔、端口状态迁移的等待时间</td></tr>
+</table>
+
+<p>拓扑发生变化时（链路 up/down），交换机会发 TCN BPDU（Topology Change Notification，拓扑变化通知）通知 root，触发地址表老化加速——细节第三课之后用到时再展开，现在只要知道「BPDU 是 STP 世界里唯一的语言」。</p>
+
+<h2>3. 选 root：比小不比大</h2>
+
+<p>每台交换机的 <b>Bridge ID</b>（桥 ID）由两部分拼成：</p>
+
+<pre><code>Bridge ID = 优先级（2 字节，默认 32768，只能取 4096 的倍数）+ 交换机 MAC 地址</code></pre>
+
+<p>全网交换机交换一轮 BPDU 后，<b>Bridge ID 最小</b>的那台成为 root bridge（根桥）。优先级相同时比 MAC 地址。root 是整棵生成树的「树根」，所有路径开销都以到它的距离计算。</p>
+
+<p>实践含义：核心交换机应该当 root。华为设备上两条路——直接指定优先级（<code>stp priority 0</code>，0 是最高优先级），或用 <code>stp root primary</code> 让设备自动算一个足够低的优先级。如果 root 选错了（比如一台接入层小交换机当了 root），主干流量全要绕到它那里，网络又慢又脆。</p>
+
+<h2>4. 端口角色：每个端口回答三个问题</h2>
+
+<p>root 选出来之后，每个端口要回答三个问题，答案决定它的角色：</p>
+
+<p><b>问题一：谁到 root 最近？</b>每台非 root 交换机选出 <b>root port</b>（根端口，RP）——收到的 BPDU 里 Root Path Cost 最小的那个端口。平手时依次比：对端 Bridge ID → 对端 Port ID → 本端 Port ID。root 桥自己不需要 RP。</p>
+
+<p><b>问题二：这个网段谁说了算？</b>每个网段（每条链路的两端之间）选出一个 <b>designated port</b>（指定端口，DP）——该网段上到 root 开销最小的端口。平手时比 Bridge ID，小者胜出。root 桥的所有端口都是 DP。</p>
+
+<p><b>问题三：剩下的怎么办？</b>既不是 RP 也不是 DP 的端口进入 <b>blocking</b>（阻塞）状态——不收发数据帧。</p>
+
+<div class="callout warn">
+  <b>精度点（很多人在这里含糊）：</b>阻塞端口<b>不是</b>链路 down。它的物理链路是 UP 的，照常收发 BPDU，只是不转发数据帧。它是「热备份」：主路径一断，它立刻接管。你在诊断题里答的「down 掉一个端口」，准确说法是「置为阻塞状态」。
+</div>
+
+<h2>5. 收敛：从环路到无环</h2>
+
+<p>端口从阻塞到转发，要按状态机一步步走：</p>
+
+<table>
+  <tr><th>状态</th><th>行为</th><th>停留时间</th></tr>
+  <tr><td>Blocking</td><td>只收 BPDU，不学 MAC、不转发数据</td><td>最长 Max Age（默认 20 秒）</td></tr>
+  <tr><td>Listening</td><td>收发 BPDU，参与选举，仍不学 MAC 不转发</td><td>Forward Delay（默认 15 秒）</td></tr>
+  <tr><td>Learning</td><td>学 MAC 地址，仍不转发数据</td><td>Forward Delay（默认 15 秒）</td></tr>
+  <tr><td>Forwarding</td><td>正常转发</td><td>—</td></tr>
+</table>
+
+<p>所以经典 STP 的收敛要 <b>30–50 秒</b>——这就是「拔根网线，网络卡半分钟」的来源。</p>
+
+<p><b>RSTP</b>（Rapid Spanning Tree Protocol，快速生成树，IEEE 802.1w）做了两件事：端口角色增加了 <b>Alternate</b>（RP 的备份）和 <b>Backup</b>（DP 的备份），状态简化为 Discarding / Learning / Forwarding；靠 <b>proposal/agreement</b> 握手，备份端口切换不再傻等计时器，<b>秒级完成</b>。华为设备上 <code>stp mode rstp</code> 切换；较新的 VRP 版本默认 MSTP（<code>stp mode mstp</code>），它的快速收敛行为与 RSTP 一致。</p>
+
+<h2>6. 互动图：手算一次选举</h2>
+
+<p>三台交换机两两互联（物理成环），Bridge ID 见图。点四个标签，按顺序看 STP 怎么把环拆成树。每个端口上的徽章：<b>RP</b> = root port，<b>DP</b> = designated port，<b>BLK</b> = 阻塞端口。</p>
+
+<div class="diagram-tabs" data-tabs data-initial="0">
+  <div class="tab-bar" role="tablist" aria-label="STP 选举四步">
+    <button class="tab-btn" data-tab="0" type="button">① 初始拓扑</button>
+    <button class="tab-btn" data-tab="1" type="button">② 选 root</button>
+    <button class="tab-btn" data-tab="2" type="button">③ 定端口角色</button>
+    <button class="tab-btn" data-tab="3" type="button">④ 拔线重收敛</button>
+  </div>
+
+  <div class="tab-panel" data-panel="0" data-status="三台交换机两两互联，物理上就是一个环。以太网帧没有 TTL，不加以太网环里的帧永远不死。">
+    <figure class="net-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 360" role="img" aria-label="① 初始拓扑：三台交换机成环">
+      <text x="20" y="28" class="net-panel-title">① 初始拓扑：三台交换机两两互联</text>
+      <g>
+        <rect x="315" y="40" width="130" height="64" rx="10" class="net-node"/>
+        <text x="380" y="66" class="net-label" text-anchor="middle">SW-A</text>
+        <text x="380" y="88" class="net-id" text-anchor="middle">32768:00-1A</text>
+      </g>
+      <g>
+        <rect x="105" y="250" width="130" height="64" rx="10" class="net-node"/>
+        <text x="170" y="276" class="net-label" text-anchor="middle">SW-B</text>
+        <text x="170" y="298" class="net-id" text-anchor="middle">32768:00-1B</text>
+      </g>
+      <g>
+        <rect x="525" y="250" width="130" height="64" rx="10" class="net-node"/>
+        <text x="590" y="276" class="net-label" text-anchor="middle">SW-C</text>
+        <text x="590" y="298" class="net-id" text-anchor="middle">4096:00-1C</text>
+      </g>
+      <line x1="335" y1="104" x2="195" y2="250" class="net-edge"/>
+      <line x1="435" y1="104" x2="565" y2="250" class="net-edge"/>
+      <line x1="235" y1="282" x2="525" y2="282" class="net-edge"/>
+      <text x="238" y="168" class="net-cost">cost 200</text>
+      <text x="512" y="168" class="net-cost">cost 200</text>
+      <text x="368" y="272" class="net-cost">cost 200</text>
+      <circle cx="335" cy="104" r="5" class="net-port"/>
+      <circle cx="195" cy="250" r="5" class="net-port"/>
+      <circle cx="435" cy="104" r="5" class="net-port"/>
+      <circle cx="565" cy="250" r="5" class="net-port"/>
+      <circle cx="235" cy="282" r="5" class="net-port"/>
+      <circle cx="525" cy="282" r="5" class="net-port"/>
+      <text x="380" y="345" class="net-note" text-anchor="middle">三条链路各 200 开销；注意 C 的优先级是 4096，比 A、B 的 32768 都小。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="1" data-status="Bridge ID 最小者当选 root：4096:00-1C 小于 32768:00-1A。root 每 2 秒发一次 BPDU，路径开销沿途累加。">
+    <figure class="net-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 360" role="img" aria-label="② 选 root：SW-C 当选">
+      <text x="20" y="28" class="net-panel-title">② 选 root：Bridge ID 最小者胜出</text>
+      <g>
+        <rect x="315" y="40" width="130" height="64" rx="10" class="net-node"/>
+        <text x="380" y="66" class="net-label" text-anchor="middle">SW-A</text>
+        <text x="380" y="88" class="net-id" text-anchor="middle">32768:00-1A</text>
+      </g>
+      <g>
+        <rect x="105" y="250" width="130" height="64" rx="10" class="net-node"/>
+        <text x="170" y="276" class="net-label" text-anchor="middle">SW-B</text>
+        <text x="170" y="298" class="net-id" text-anchor="middle">32768:00-1B</text>
+      </g>
+      <g>
+        <rect x="525" y="250" width="130" height="64" rx="10" class="net-node root"/>
+        <text x="590" y="276" class="net-label" text-anchor="middle">SW-C</text>
+        <text x="590" y="298" class="net-id" text-anchor="middle">4096:00-1C</text>
+        <text x="590" y="238" class="net-role dp" text-anchor="middle">ROOT</text>
+      </g>
+      <line x1="335" y1="104" x2="195" y2="250" class="net-edge"/>
+      <line x1="435" y1="104" x2="565" y2="250" class="net-edge bpdu"/>
+      <line x1="235" y1="282" x2="525" y2="282" class="net-edge bpdu"/>
+      <text x="238" y="168" class="net-cost">cost 200</text>
+      <text x="512" y="168" class="net-cost">cost 200</text>
+      <text x="368" y="272" class="net-cost">cost 200</text>
+      <text x="470" y="150" class="net-role rp">BPDU →</text>
+      <text x="330" y="305" class="net-role rp">← BPDU</text>
+      <text x="380" y="345" class="net-note" text-anchor="middle">绿色虚线是 BPDU 的流向：从 root（SW-C）向外扩散，每过一跳累加开销。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="2" data-status="A、B 到 root 的开销都是 200，平手比 Bridge ID：A 更小，A 的端口是指定端口（DP），B 的对应端口被阻塞（BLK）。">
+    <figure class="net-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 360" role="img" aria-label="③ 定端口角色：RP、DP 与阻塞端口">
+      <text x="20" y="28" class="net-panel-title">③ 定端口角色：每个端口回答三个问题</text>
+      <g>
+        <rect x="315" y="40" width="130" height="64" rx="10" class="net-node"/>
+        <text x="380" y="66" class="net-label" text-anchor="middle">SW-A</text>
+        <text x="380" y="88" class="net-id" text-anchor="middle">32768:00-1A</text>
+      </g>
+      <g>
+        <rect x="105" y="250" width="130" height="64" rx="10" class="net-node"/>
+        <text x="170" y="276" class="net-label" text-anchor="middle">SW-B</text>
+        <text x="170" y="298" class="net-id" text-anchor="middle">32768:00-1B</text>
+      </g>
+      <g>
+        <rect x="525" y="250" width="130" height="64" rx="10" class="net-node root"/>
+        <text x="590" y="276" class="net-label" text-anchor="middle">SW-C</text>
+        <text x="590" y="298" class="net-id" text-anchor="middle">4096:00-1C</text>
+      </g>
+      <line x1="335" y1="104" x2="195" y2="250" class="net-edge"/>
+      <line x1="435" y1="104" x2="565" y2="250" class="net-edge"/>
+      <line x1="235" y1="282" x2="525" y2="282" class="net-edge"/>
+      <text x="238" y="168" class="net-cost">cost 200</text>
+      <text x="512" y="168" class="net-cost">cost 200</text>
+      <text x="368" y="272" class="net-cost">cost 200</text>
+      <circle cx="335" cy="104" r="5" class="net-port dp"/>
+      <circle cx="195" cy="250" r="5" class="net-port blk"/>
+      <circle cx="435" cy="104" r="5" class="net-port rp"/>
+      <circle cx="565" cy="250" r="5" class="net-port dp"/>
+      <circle cx="235" cy="282" r="5" class="net-port rp"/>
+      <circle cx="525" cy="282" r="5" class="net-port dp"/>
+      <text x="300" y="88" class="net-role dp" text-anchor="middle">DP</text>
+      <text x="462" y="88" class="net-role rp" text-anchor="middle">RP</text>
+      <text x="148" y="238" class="net-role blk" text-anchor="middle">BLK</text>
+      <text x="212" y="312" class="net-role rp" text-anchor="middle">RP</text>
+      <text x="592" y="238" class="net-role dp" text-anchor="middle">DP</text>
+      <text x="548" y="312" class="net-role dp" text-anchor="middle">DP</text>
+      <text x="380" y="345" class="net-note" text-anchor="middle">A–B 网段：A、B 到 root 都是 200，平手比 Bridge ID，A 小 → A 的端口是 DP，B 的被阻塞。BLK 端口链路 UP、照常收 BPDU，只是不转发数据。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <div class="tab-panel" data-panel="3" data-status="拔掉 A–C 后，A 改道经 B 到 root：A 的 A–B 端口从 DP 变 RP，B 的被阻塞端口转正为 DP。RSTP 秒级完成，经典 STP 要等 30–50 秒。">
+    <figure class="net-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 360" role="img" aria-label="④ 拔线重收敛：A 改道经 B">
+      <text x="20" y="28" class="net-panel-title">④ 拔线重收敛：A 改道经 B 到 root</text>
+      <g>
+        <rect x="315" y="40" width="130" height="64" rx="10" class="net-node"/>
+        <text x="380" y="66" class="net-label" text-anchor="middle">SW-A</text>
+        <text x="380" y="88" class="net-id" text-anchor="middle">32768:00-1A</text>
+        <text x="380" y="26" class="net-note" text-anchor="middle">A→root = 400</text>
+      </g>
+      <g>
+        <rect x="105" y="250" width="130" height="64" rx="10" class="net-node"/>
+        <text x="170" y="276" class="net-label" text-anchor="middle">SW-B</text>
+        <text x="170" y="298" class="net-id" text-anchor="middle">32768:00-1B</text>
+      </g>
+      <g>
+        <rect x="525" y="250" width="130" height="64" rx="10" class="net-node root"/>
+        <text x="590" y="276" class="net-label" text-anchor="middle">SW-C</text>
+        <text x="590" y="298" class="net-id" text-anchor="middle">4096:00-1C</text>
+      </g>
+      <line x1="335" y1="104" x2="195" y2="250" class="net-edge"/>
+      <line x1="435" y1="104" x2="565" y2="250" class="net-edge broken"/>
+      <line x1="235" y1="282" x2="525" y2="282" class="net-edge"/>
+      <text x="238" y="168" class="net-cost">cost 200</text>
+      <text x="368" y="272" class="net-cost">cost 200</text>
+      <text x="470" y="150" class="net-role blk">链路已断</text>
+      <circle cx="335" cy="104" r="5" class="net-port rp"/>
+      <circle cx="195" cy="250" r="5" class="net-port dp"/>
+      <circle cx="235" cy="282" r="5" class="net-port rp"/>
+      <circle cx="525" cy="282" r="5" class="net-port dp"/>
+      <text x="300" y="88" class="net-role rp" text-anchor="middle">RP</text>
+      <text x="148" y="238" class="net-role dp" text-anchor="middle">DP</text>
+      <text x="212" y="312" class="net-role rp" text-anchor="middle">RP</text>
+      <text x="548" y="312" class="net-role dp" text-anchor="middle">DP</text>
+      <text x="380" y="345" class="net-note" text-anchor="middle">环没了，B 的被阻塞端口转正。RSTP 靠 Alternate 端口秒级切换；经典 STP 要等 30–50 秒。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+    </figure>
+  </div>
+
+  <p class="tab-status" data-tab-status></p>
+</div>
+
+<p class="meta">图 1 · STP 选举四步。赭石色粗框是 root bridge；端口徽章 RP（绿）= root port、DP（赭石）= designated port、BLK（红）= 阻塞端口；绿色虚线是 BPDU 流向。</p>
+
+<h2>7. eNSP 实验：亲手选一次 root</h2>
+
+<div class="callout warn">
+  <b>先搭好 eNSP 环境。</b>eNSP 是华为官方免费模拟器（需华为账号下载），S5700 以本地进程运行，两台设备很轻量。环境搭建步骤见 <code>lab/README.md</code>；本课实验的详细步骤与预期输出见 <code>lab/0001-stp-lab.md</code>。下面的命令在 eNSP 里两台 S5700 上执行。
+</div>
+
+<pre><code># 拓扑：两台 S5700，用两条网线互连（GE0/0/1 连 GE0/0/1，GE0/0/2 连 GE0/0/2），成环
+
+# 1. 等约 30 秒让 STP 收敛，看全局选举结果
+display stp brief
+#    两行关键信息：CIST Root 的 ID（谁是 root）、每个端口的 Role
+
+# 2. 看单端口的详细状态（确认阻塞端口在收 BPDU）
+display stp interface GigabitEthernet0/0/1
+
+# 3. 改优先级，让另一台当 root（在要当 root 的那台上执行）
+stp priority 4096
+#    回到另一台再 display stp brief：root 换人，端口角色全部重排
+
+# 4. 切 RSTP，再拔线计时恢复速度
+stp mode rstp
+#    拔掉一条线再插回，对比经典 STP 的 30–50 秒
+
+# 5. 抓包看 BPDU：拓扑图上右键点一条链路 → 开始抓包，Wireshark 自动打开
+#    每 2 秒一个 BPDU，对照第 2 节的字段表看 Root ID / Root Path Cost / Bridge ID</code></pre>
+
+<p><b>要观察的三件事：</b></p>
+<ol>
+  <li><code>display stp brief</code> 里哪台是 CIST Root、哪个端口是 ALTE（阻塞）——和第 6 节图里的手算结果对照；</li>
+  <li>改 <code>stp priority</code> 后，root 换人、所有端口角色重排——这就是「比小不比大」；</li>
+  <li>Wireshark 里 BPDU 每 2 秒一个，拔线后能抓到 TCN BPDU——STP 的「心跳」和「报警」。</li>
+</ol>
+
+<div class="callout">
+  <b>注意：</b>如果 <code>display stp brief</code> 显示协议状态为 disabled，先在系统视图执行 <code>stp enable</code>。VRP 较新版本默认已启用，且默认 MSTP 模式——本课实验建议先 <code>stp mode stp</code> 切经典模式观察状态机，再切 <code>stp mode rstp</code> 对比收敛速度。命令语法以设备自带 <code>?</code> 帮助为准。
+</div>
+
+<h2>8. 自测</h2>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1 · 三台交换机 Bridge ID 分别为 32768:00-1A、32768:00-1B、4096:00-1C，谁是 root？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">第一台，优先级相同比 MAC 地址</button>
+    <button data-choice="b" type="button">第三台，4096 的优先级最小</button>
+    <button data-choice="c" type="button">第二台，MAC 地址最小的当选</button>
+    <button data-choice="d" type="button">都不是，root 必须手工指定</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2 · 被 STP 阻塞的端口处于什么状态？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">链路被关闭，不再收发任何报文</button>
+    <button data-choice="b" type="button">只收 BPDU，连数据帧都不看</button>
+    <button data-choice="c" type="button">不收发数据帧，但照常收发 BPDU</button>
+    <button data-choice="d" type="button">链路正常，只是不学 MAC 地址</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3 · 非 root 交换机选 root port 的依据是？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">到 root 路径开销最小的端口</button>
+    <button data-choice="b" type="button">端口号最小的那个物理端口</button>
+    <button data-choice="c" type="button">对端交换机 MAC 最小的端口</button>
+    <button data-choice="d" type="button">带宽最大的端口直接当选</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4 · RSTP 相比经典 STP 的核心改进是？</h3>
+  <div class="quiz-options">
+    <button data-choice="a" type="button">取消了 BPDU，改用组播保活</button>
+    <button data-choice="b" type="button">收敛仍需三十秒以上的等待</button>
+    <button data-choice="c" type="button">端口角色从三种增加到七种</button>
+    <button data-choice="d" type="button">备份端口经握手秒级切换</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score"></p>
+
+<h2>9. 主要资源</h2>
+
+<ul>
+  <li><a href="https://standards.ieee.org/standard/802_1D-2004.html" target="_blank" rel="noopener">IEEE 802.1D-2004</a>——STP 的原始标准，BPDU 字段、选举规则、状态机的权威出处。</li>
+  <li><a href="https://www.ieee802.org/1/" target="_blank" rel="noopener">IEEE 802.1 工作组</a>——802.1w（RSTP）等后续修订的官方入口。</li>
+  <li><a href="https://support.huawei.com/enterprise/zh/index.html" target="_blank" rel="noopener">华为企业业务支持</a>——搜索「S5700 STP 配置」，VRP 命令与 <code>display stp</code> 输出的官方文档（站点为 JS 渲染，用站内搜索定位）。</li>
+  <li><a href="https://www.wireshark.org/docs/wsug_html_chunked/" target="_blank" rel="noopener">Wireshark 用户指南</a>——抓包过滤与 BPDU 解读，第 7 节实验的配套。</li>
+</ul>
+
+<div class="callout teacher">
+  <b>有卡住的地方就问。</b>比如「平手时为什么比 Bridge ID 而不是比端口号」「MSTP 和 RSTP 到底什么关系」「eNSP 里 display stp brief 输出怎么看」——都可以直接追问。下一课我们往下走一层：MAC 地址表与交换机的三种转发动作（泛洪、转发、丢弃），这是 VLAN 和 trunk 的地基。
+</div>
+
+<nav class="lesson-nav">
+  <a href="../README.md">← 返回 Network 长文</a> ·
+  <a href="../lab/0001-stp-lab.md">实验手册</a> ·
+  <span>下一课：MAC 表与转发决策（待发布）</span>
+</nav>
+
+<script src="../assets/quiz.js"></script>
+<script>
+  var QUIZ_CONFIG = [
+    {
+      correct: "b",
+      okMsg: "对。Bridge ID 比小：4096 的优先级直接压过 32768，不用再比 MAC。",
+      errMsg: "再想想：优先级是 Bridge ID 的高位，4096 比 32768 小，先比优先级就分胜负了。"
+    },
+    {
+      correct: "c",
+      okMsg: "对。阻塞端口链路 UP、照常收发 BPDU，只是不转发数据帧——它是热备份。",
+      errMsg: "再想想：如果链路真的关了，主路径断时它怎么接管？它必须一直听着 BPDU。"
+    },
+    {
+      correct: "a",
+      okMsg: "对。root port 看的是到 root 的累计路径开销，最小者当选；平手才比 Bridge ID。",
+      errMsg: "再想想：端口号和带宽都不是选举依据，选票在 BPDU 的 Root Path Cost 字段里。"
+    },
+    {
+      correct: "d",
+      okMsg: "对。Alternate/Backup 端口加 proposal/agreement 握手，备份端口秒级切换。",
+      errMsg: "再想想：RSTP 没有取消 BPDU，收敛也不再傻等 30 秒——这正是它「快」的原因。"
+    }
+  ];
+  initQuizzes(QUIZ_CONFIG, "score");
+</script>
+<script src="../assets/diagram-tabs.js"></script>
+<script src="../assets/zoomable-figure.js"></script>
+</body>
+</html>
