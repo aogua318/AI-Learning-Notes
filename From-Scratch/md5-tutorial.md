@@ -164,6 +164,38 @@ a = b + left_rotate((a + F(b,c,d) + M[k] + K[i]) <<< s)
 - 移位数 `s` 也是固定的 64 个查表值：轮 1 是 `7,12,17,22` 循环，轮 2 是 `5,9,14,20`，轮 3 是 `4,11,16,23`，轮 4 是 `6,10,15,21`。
 - 消息字下标 `k`：轮 1 用 `0..15` 顺序，轮 2 用 `(1+5i) mod 16`，轮 3 用 `(5+3i) mod 16`，轮 4 用 `(7i) mod 16`。
 
+```mermaid
+flowchart TD
+    Msg["填充后的消息<br/>N × 512 bit"] --> Block["当前 512-bit 块<br/>64 字节"]
+    Block --> Words["拆成 16 个 32-bit 小端字<br/>M[0] ... M[15]"]
+    Words --> Init["工作变量初始化<br/>a,b,c,d ← A,B,C,D"]
+    Init --> Loop["4 轮 × 16 步 = 64 步<br/>每步更新 a/b/c/d"]
+    Loop --> Add["状态累加（mod 2^32）<br/>A+=a, B+=b, C+=c, D+=d"]
+    Add --> More{"还有下一个块？"}
+    More -- "有" --> Next["用更新后的 A,B,C,D<br/>作为下一块初值"]
+    Next --> Block
+    More -- "没有" --> Out["输出 128-bit 摘要<br/>A,B,C,D 按小端拼接"]
+
+    subgraph Step["单步运算（重复 64 次）"]
+      direction LR
+      F["a = b + ROTL(a + F(b,c,d) + M[k] + K[i], s)"]
+    end
+    Loop -.-> F
+
+    classDef input fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef step fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef decision fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#5D4037
+    classDef output fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    class Msg,Block,Words,Init,Add,Next input
+    class Loop,F step
+    class More decision
+    class Out output
+```
+
+*图：一个 512 位块的内部循环与块间状态传递。64 步都在更新工作变量 a/b/c/d；走完 4 轮后，把 a/b/c/d 累加回 A/B/C/D，再进入下一个块。*
+
+图中 `ROTL(x, s)` 即循环左移 s 位，也就是前文公式里的 `<<< s`。
+
 ### 1.4 累加
 
 每块处理完后：`A += a; B += b; C += c; D += d;`（模 2^32）。

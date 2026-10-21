@@ -73,6 +73,25 @@ PCM 1152 点（每声道）
 
 **比特池（bit reservoir）**：每帧标称比特数固定（如 128 kbps → 每帧约 417 字节），但复杂帧需要更多、安静帧用不满。`main_data_begin` 指针让当前帧可以**回头引用**之前帧攒下的空闲字节（最多约 511 字节）。这就是为什么 MP3 帧不能从任意字节独立解码——side info 里的 `main_data_begin` 把帧串成了一条「借贷链」。
 
+```mermaid
+sequenceDiagram
+    participant D as 解码器
+    participant P as 帧 N-1
+    participant C as 帧 N
+    Note over P: 帧头 + side info<br/>main_data：本帧数据 + 未用完的空闲字节
+    Note over C: 帧头 + side info<br/>main_data_begin = 回看距离
+    D->>C: 1. 读帧头 / side info
+    C-->>D: 2. 得到 main_data_begin
+    D->>P: 3. 按指针回读 main_data 尾部
+    P-->>D: 4. 取到借出的字节
+    D->>C: 5. 继续读本帧 main_data
+    Note over D,C: 帧 N 不能独立解码：它的数据可能从帧 N-1 的尾部开始
+```
+
+*图：解码帧 N 时的实际读取顺序。帧 N 的 side info 给出 `main_data_begin`，解码器据此回读帧 N-1 的尾部；所以帧 N 不能从任意字节独立解码。*
+
+这也是为什么后面的帧解析器可以逐帧扫描，但真正解码音频时必须维护跨帧的 main_data 缓冲。
+
 ### 1.4 解码是流水线的逆过程（简单得多）
 
 解码器不需要心理声学模型——编码器已经做完所有决策，比特流里是「量化结果 + 比例因子 + 霍夫曼码」：

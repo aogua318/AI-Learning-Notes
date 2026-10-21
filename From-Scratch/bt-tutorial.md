@@ -183,6 +183,42 @@ d (根字典)
 
 **分块校验**：把所有文件按顺序首尾拼成虚拟大流，第 i 块 = 虚拟流的 `[i × piece_length, (i+1) × piece_length)` 区间，对每块算 SHA-1 与 `pieces` 中对应 20 字节比对。注意**文件边界可以横穿块的中间**——一个块可能由「文件 A 的尾巴 + 文件 B 的开头」组成，这是实现校验器时最大的逻辑陷阱。
 
+```mermaid
+flowchart TB
+    subgraph Phys["磁盘上的物理文件"]
+      direction LR
+      A["文件 A<br/>长度 L_A"]
+      B["文件 B<br/>长度 L_B"]
+    end
+    A --> Stream["虚拟拼接流（不落盘）<br/>A 的全部字节 → B 的全部字节"]
+    B --> Stream
+    Stream --> Cut["按 piece length 切分（记作 L）<br/>第 i 块 = 虚拟流从 i×L 到 (i+1)×L"]
+    Cut --> P0["块 i-1<br/>完全落在 A 内"]
+    Cut --> PI["块 i<br/>A 的尾巴 + B 的开头<br/>文件边界横穿块中间"]
+    Cut --> P1["块 i+1<br/>完全落在 B 内"]
+    PI --> Hash["对块 i 的完整字节算 SHA-1<br/>与 pieces 中第 i 个 20 字节比对"]
+    Hash --> Result{"一致？"}
+    Result -- "是" --> OK["该块通过"]
+    Result -- "否" --> Bad["该块损坏"]
+
+    classDef file fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef stream fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef piece fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#5D4037
+    classDef check fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef decision fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C
+    classDef fail fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C
+    class A,B file
+    class Stream,Cut stream
+    class P0,PI,P1 piece
+    class Hash,OK check
+    class Bad fail
+    class Result decision
+```
+
+*图：.torrent 分块校验的读取顺序——物理文件先拼成虚拟流，再按 piece length 切块；块 i 可以同时包含文件 A 的尾部和文件 B 的开头。*
+
+实现校验器时，先构造 `(相对路径, 长度)` 列表并累加全局偏移，再按全局区间读取；不要在单个文件内部重新分块。
+
 ### 2.2 第一步：从零实现 bencode
 
 bencode 只有 4 种类型，编码规则自描述：
