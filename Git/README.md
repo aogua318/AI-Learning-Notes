@@ -7,15 +7,6 @@
 > 环境基准：Git 2.55（Windows / Git Bash），2026-09 的 GitHub 规则（密码登录已于 2021 年移除，必须 PAT 或 SSH）。
 >
 > 配套文件：[git_sandbox.sh](#12-附录目录文件与沙箱使用说明) —— 一键搭建「本地远程」沙箱，不碰 GitHub 就能完整练习 push/pull/fetch/冲突解决。
->
-> **HTML 互动课（teach 工作区）**：本文是速查长文；想按「图 → 练习 → 自测」的节奏学，走这四节短课：
->
-> 1. [快照、提交链与分支指针](lessons/0001-snapshots-and-refs.html)
-> 2. [三区与远程地图：push 之前你站在哪](lessons/0002-three-areas-and-remote-map.html)
-> 3. [推送被拒急救：non-fast-forward](lessons/0003-push-rejected-rescue.html)
-> 4. [merge 还是 rebase：把分叉讲清楚](lessons/0004-merge-vs-rebase.html)
->
-> 速查：[术语表](reference/glossary.html) · [推送急救卡](reference/push-rescue.html)
 
 ---
 
