@@ -27,6 +27,17 @@
 - 该组件已部署到 Japanese-Travel/assets/（两边文件一致），但 Japanese-Travel 的 4 节课暂无 figure/img，脚本尚未被引入——组件已武装待用。
 - 唯一实际使用点：`lessons/0001-ownership-and-move.html` 的所有权生命周期图（内嵌 SVG + archify-figure 样式）。
 
+## 工作区文件地图（新会话必读）
+
+- `MISSION.md`：使命、约束、范围（为什么教、教什么、不教什么）
+- `LEARNER-PROFILE.md`：学习者档案（学习者是谁、强项与固有模式、偏好、教学策略结论）——**新 AI 接手前必读，防止用通用教法；每课结束由 AI 更新（进度快照 + 新偏好/能力信号），维护规则见该文件第六节**
+- `NOTES.md`（本文件）：进度、环境事实、决策、归档规则
+- `learning-records/`：一课一聚类的心智模型演变记录（决策级，不存流水账）
+- `my-notes/`：一课一份的学生笔记（AI 按主题整理落盘）
+- `reference/glossary.html`：已晋升术语（跨会话用语一致）
+- `lessons/`：课程本体（HTML 互动课）
+- `RESOURCES.md`：经在线核实的资源清单
+
 ## 学习进度
 
 - 2026-10-19：rustlings 环境就绪——项目在 `E:\demo\rust\rustlings`（init 生成，含 rust-analyzer.toml），runner 已装（`.cargo/bin/rustlings.exe`），用户已加 PATH，watch 模式正常运行，共 94 题。命令：n 下一题 / h 提示 / l 列表 / c 全量检查 / x 重置 / q 退出。**move_semantics 六题已通过（第一课作业验收）**，用户进度至 05_vecs 之后的分类。
