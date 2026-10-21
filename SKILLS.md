@@ -23,6 +23,7 @@
 | 建虚拟环境 / 管理 Python 依赖 | `uv-package-manager` |
 | 提交代码，想要规范提交信息 | `conventional-commit` |
 | 想被循序渐进地教一个概念 | `teach`（输入 `/teach <主题>`） |
+| 开课前预检 HTML 互动课（答案键、反馈极性、计分） | `lesson-quiz-preflight` |
 | 想法 / 计划想被压力测试 | `grilling`（或 `/grill-me`） |
 | 想找新 skill | `find-skills` |
 | 用浏览器查资料 / 测试网页 | `agent-browser` 或 `browser-use:control-browser` |
@@ -33,7 +34,7 @@
 
 - 大多数 skill 由 AI 按场景自动触发，直接用自然语说明要做的事即可；
 - `teach` 为仅手动调用，需输入 `/teach <想学的东西>`；
-- 本仓库已安装技能见 `.zcode/skills/` 目录（29 个）。
+- 本仓库已安装技能见 `.zcode/skills/` 目录（30 个）。
 
 ## 典型学习工作流
 
