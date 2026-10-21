@@ -84,6 +84,18 @@
 </dl>
 
 <dl class="term">
+  <dt>切片（slice）</dt>
+  <dd>引用集合中一段连续元素的引用，不拥有所有权；内部是“地址 + 长度”的胖指针，常见形态为 &amp;str 与 &amp;[T]。创建切片不复制底层数据。</dd>
+  <dd class="avoid">避免：子串、复制出的片段、视图</dd>
+</dl>
+
+<dl class="term">
+  <dt>区间（range）</dt>
+  <dd>a..b 为左闭右开区间（含 a、不含 b），a..=b 为闭区间；长度 = 上界 − 下界，x..x 是合法空区间。三条设计理由与具体用例无关。</dd>
+  <dd class="avoid">避免：范围、左开右闭</dd>
+</dl>
+
+<dl class="term">
   <dt>可变绑定（mutable binding）</dt>
   <dd>用 mut 声明的变量，其值可以被修改；默认绑定不可变。</dd>
   <dd class="avoid">避免：变量（不修饰时一律指不可变绑定）</dd>
@@ -166,7 +178,7 @@
 </dl>
 
 <hr>
-<p class="meta">生命周期（lifetime）/ 切片（slice）/ 区间（range）/ 闭包（closure）/ 迭代器（iterator）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
+<p class="meta">生命周期（lifetime）/ 闭包（closure）/ 迭代器（iterator）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
 术语有争议或想改定义，直接告诉我——这份表的措辞以你用得顺手为准。</p>
 
 </body>

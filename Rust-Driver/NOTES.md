@@ -25,7 +25,7 @@
 
 - `assets/zoomable-figure.js`（2026-10-19 用户升级）：滚轮以光标为中心缩放（1~8 倍）、指针事件拖拽平移、布局式缩放（改宽高+left/top，不用 transform 以保证 SVG 矢量清晰）、iframe 透明捕获层、computeZoom 纯函数可在 Node 单测。配套 CSS 契约在 `assets/lesson.css` 的"可放大图表组件"段：展开态媒体必须 `position:absolute`，否则 JS 的 left/top 平移静默失效。
 - 该组件已部署到 Japanese-Travel/assets/（两边文件一致），但 Japanese-Travel 的 4 节课暂无 figure/img，脚本尚未被引入——组件已武装待用。
-- 唯一实际使用点：`lessons/0001-ownership-and-move.html` 的所有权生命周期图（内嵌 SVG + archify-figure 样式）。
+- 实际使用点：`lessons/0001-ownership-and-move.html` 的所有权生命周期图、`lessons/0003-slices-and-ranges.html` 的切片胖指针图（内嵌 SVG）。
 
 ## 工作区文件地图（新会话必读）
 
@@ -41,11 +41,12 @@
 ## 学习进度
 
 - 2026-10-19：rustlings 环境就绪——项目在 `E:\demo\rust\rustlings`（init 生成，含 rust-analyzer.toml），runner 已装（`.cargo/bin/rustlings.exe`），用户已加 PATH，watch 模式正常运行，共 94 题。命令：n 下一题 / h 提示 / l 列表 / c 全量检查 / x 重置 / q 退出。**move_semantics 六题已通过（第一课作业验收）**，用户进度至 05_vecs 之后的分类。
-- 学习记录归档规则（2026-10-19 用户拍板）：**一课一个聚类记录**，文件名对应课号（如 `0001-ownership-move-copy-drop.md`），课内多次追问按时间顺序追加小节，演进痕迹即价值；不再一条记录一个文件。当前仅第一课聚类一份。
+- 学习记录归档规则（2026-10-19 用户拍板）：**一课一个聚类记录**，文件名对应课号（如 `0001-ownership-move-copy-drop.md`），课内多次追问按时间顺序追加小节，演进痕迹即价值；不再一条记录一个文件。截至 2026-10-21 已有 0001–0003 三份聚类。
 - **学生笔记规则（2026-10-19 用户拍板）**：每课一份学生笔记，放 `my-notes/`，文件名对应课号（如 `my-notes/0001-ownership-and-move.md`）。用户的原始笔记是临时提问、缺逻辑性，由 AI 按主题重组通顺后再落盘；误区处标注"曾误→正解"，未决问题进队列，结尾附自查问题。已发布第一课整理版（覆盖所有权四连问、七条归纳、drop 三连问、编译期机制、rustlings 00~06 十一条）。
 - 学习进度：move_semantics 六题已通过（第一课作业验收），用户进度至 rustlings 06 之后的分类。第二课《借用与引用》已发布（lessons/0002-borrowing-and-references.html）。用户开放问题排队中：const 语义、区间半开理由（第三课）、闭包与迭代器（其后）。
 - 2026-10-20：第二课里程碑——课后任务三项全部完成（The Book 4.2/4.3 原文通读、WoL 项目 String→&str 重构就地完成并运行验证）；术语表晋升 4 词条（借用、不可变引用、可变引用、悬垂引用）；learning-records/0002 聚类与 my-notes/0002 整理落盘。批阅 8 条笔记：主体全对；两处精度问题（引用作用域到"最后一次使用"而非一次、排他管"作用域重叠"不管"前后脚"）；一处真误区（区间半开的设计原因被 first_word 用例带偏——三条真正理由用户第一课就写对过，第三课须形式化重锚）；iter() 产出引用而非元素本体（小精度）。用户独立重发现"排他=编译期互斥"的并发洞察（已补数据竞争 vs 同步的边界）。追问弧线后续闭合：move 变量模型、&str vs &String、NLL 完整操作化规则（用户自主综合，探针证实）、栈模型推断（反例击穿：非 LIFO 死亡、集合成员而非栈顶、真实机制是 MIR 区域数据流）。
-- 2026-10-20：第三课《切片与区间》发布（lessons/0003-slices-and-ranges.html）——收 primitive_types4 的 [1..4] 之问：三条半开设计理由形式化重锚（长度=上界−下界 / 相邻无缝 / 空区间可写），明确拆 first_word 误区（用例≠设计原因）；&str/&[T] 全貌 + 手绘胖指针图（可放大组件）；first_word 两版对照展示"切片+借用规则"合力（E0502）；字面量即 &str；参数收最泛类型。课后任务：The Book 4.3 回看、first_word 实战（WoL，含 oui 可选进阶）、rustlings 09_strings。术语表晋升（切片/区间）待第三课作业完成后做。
+- 2026-10-20：第三课《切片与区间》发布（lessons/0003-slices-and-ranges.html）——收 primitive_types4 的 [1..4] 之问：三条半开设计理由形式化重锚（长度=上界−下界 / 相邻无缝 / 空区间可写），明确拆 first_word 误区（用例≠设计原因）；&str/&[T] 全貌 + 手绘胖指针图（可放大组件）；first_word 两版对照展示"切片+借用规则"合力（E0502）；字面量即 &str；参数收最泛类型。课后任务：The Book 4.3 回看、first_word 实战（WoL，含 oui 可选进阶）、rustlings 09_strings。术语表晋升（切片/区间）已于 2026-10-21 作业完成后完成。
+- 2026-10-21：第三课作业三项全部提交并批阅。first_word 实现正确（&str→&str 索引循环，无空格分支已验证）；半开三理由脱离 first_word 复述，第二课误区正式收口。批阅发现三处需拧：① 第一版 first_word 返回的是空格下标（作业写成"长度"——first_word 的词总从 0 开始，数值恰好相等，但语义与类型都不同）；② E0502 被解释成"clear 交出所有权"——实为 &mut self 借用与存活 word 的不可变借用重叠，已用 E0502/E0382 对照与 NLL 顺序探针纠正；③ strings3 手搓 trim 四个测试全过但空串/全空白均越界 panic（已实测），且用了未学的 iter().enumerate().rev()（肯定自学超前，正式概念留给迭代器专课）。WoL main 已收尾为可编译 NLL 演示，`cargo run` 通过。课程修正：互动练习 2/4 反馈文案颠倒已修；第 5 节加"第一版返回下标不是长度"精度补丁与"clear ≠ move"常见误读提示。产物：my-notes/0003、learning-records/0003 落盘；术语表晋升切片/区间（共 15 词条）；LEARNER-PROFILE 同步。rustlings 进度 strings1–4 完成，下一分类 10_modules。
 
 ## 待核实 / 后续事项
 

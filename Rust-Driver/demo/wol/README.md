@@ -123,6 +123,21 @@ fn save_target(mac: String) -> Target {
 
 </details>
 
+## 第三课练习：first_word（已完成）
+
+在本项目里实现 `fn first_word(s: &str) -> &str`：返回第一个空格之前的切片，无空格返回整个字符串。用的是索引循环版，只用已学概念。
+
+`main` 里用 NLL 顺序演示了“借用结束后才能 clear”：
+
+```rust
+let mut s = String::from("Hello World");
+let word = first_word(&s);
+println!("第一个单词：{word}");   // word 最后一次使用
+s.clear();                        // 编译通过：不可变借用已结束
+```
+
+把 `println!` 挪到 `s.clear()` 之后就会得到 `error[E0502]`（不可变借用与 `&mut` 重叠）；反例以注释保留在 `main.rs` 末尾。完整任务见 [lessons/0003-slices-and-ranges.html](../../lessons/0003-slices-and-ranges.html)。
+
 ## 下一步（项目路线）
 
 1. MAC 地址从命令行参数读入（`std::env::args()`，顺带练 `Option`）；

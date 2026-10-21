@@ -5,7 +5,8 @@
 //! 构造 Wake-on-LAN 魔术包（magic packet）并打印，不发送网络流量。
 //!
 //! 第二课《借用与引用》的课后任务在本文件完成（String → &str 重构），
-//! 任务书与预期报错见同目录 README.md；本文件是完成态。
+//! 任务书与预期报错见同目录 README.md；第三课的 first_word 练习也在此实现。
+//! 本文件是完成态。
 
 /// 构造 Wake-on-LAN 魔术包：6 字节 0xFF 开头，后面跟 16 遍目标 MAC，共 102 字节。
 /// 参数收 &str：只读借一眼，MAC 的所有权留在调用者手里。
@@ -52,6 +53,18 @@ fn print_hex(packet: &[u8]) {
     println!();
 }
 
+/// 返回第一个空格之前的切片；没有空格就返回整个字符串。
+/// 参数与返回值都是 &str：只借用、不复制。
+fn first_word(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] == b' ' {   // 如果检测到空格
+            return &s[0..i];
+        }
+    }
+    &s[..]
+}
+
 fn main() {
     let mac = String::from("AA-BB-CC-DD-EE-FF");
 
@@ -62,4 +75,19 @@ fn main() {
     println!("目标 MAC：{mac}");
 
     print_hex(&packet);
+
+
+    let mut s = String::from("Hello World");
+    let word = first_word(&s);
+    println!("第一个单词：{word}");   // word 最后一次使用在这里
+    s.clear();                        // 编译通过：借用已结束，&mut s 不再冲突
+
+    // 无空格分支
+    println!("无空格：{}", first_word("Solo"));
+
+    // 反例（取消注释会报 E0502：不可变借用与 &mut 重叠）：
+    // let t = String::from("Hello World");
+    // let w = first_word(&t);
+    // t.clear();
+    // println!("{w}");
 }
