@@ -53,6 +53,8 @@
 - **本地仓库**：`.git` 目录里的完整历史（**含全部版本**，所以离线也能看日志、切分支）；
 - **远程仓库**：GitHub 上的那份副本，本地仓库与它是**对等的独立仓库**，靠 push/fetch 同步。
 
+> 可交互版本（四区状态 + fetch/pull 到底动了哪一层）：[Git 状态与引用图](reference/git-state-and-refs.html)。
+
 ### 0.3 提交历史是一条链
 
 每个 commit 包含：**完整的树（快照）+ 作者/时间 + 说明 + 上一个 commit 的哈希**。哈希（SHA-1，如 `a1b2c3d`）由内容算出——改了内容哈希必变，所以历史链不可篡改，哈希就是每个存档点的「身份证」。
@@ -266,6 +268,8 @@ git push
 ```
 
 > 千万不要条件反射地 `--force`。强推会**抹掉远程上你不知道的提交**（比如同事刚推的 C）。确需强推（rebase 过自己的分支）也用 `git push --force-with-lease`——它会检查远程没有你未见过的新提交，是安全阀。
+
+> 把 fetch → pull --rebase → push 三步连起来看：[参考页第 ③ 页「推送被拒」](reference/git-state-and-refs.html)。
 
 ### 4.5 本地远程：不出门就能练
 
@@ -499,6 +503,8 @@ gh pr merge --squash --delete-branch # 终端里合并
 | `file exceeds ... 100.00 MB` | GitHub 单文件上限 100MB（>50MB 警告） | 移出版本管理；真要存大文件用 [Git LFS](https://git-lfs.com)：`git lfs install && git lfs track "*.psd"` |
 | `push protection` 拒绝 | 提交内容里检测到 GitHub 已知泄露的密钥格式 | **正确做法是作废该密钥**，而不是绕过；误报才可绕过一次 |
 
+> 其中 non-fast-forward 的三步自救（fetch → pull --rebase → push）有一张分步图：[参考页第 ③ 页](reference/git-state-and-refs.html)。
+
 ### 9.2 通用排障
 
 | 报错 | 原因 | 处理 |
@@ -570,6 +576,8 @@ Windows 的 CRLF（`\r\n`）与 Linux 的 LF（`\n`）差异是跨平台仓库�
 |------|------|
 | `README.md` | 本文档 |
 | `git_sandbox.sh` | 一键搭建「本地远程」练习沙箱（见下） |
+| `reference/git-state-and-refs.html` | 五组交互图：四区状态、引用指针、推送被拒、merge/rebase、reset/revert |
+| `assets/` | 参考页共享样式、图表切换与放大组件 |
 
 ### 沙箱是什么
 

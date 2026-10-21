@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Git 状态与引用：五组图看懂 — Git 参考</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body class="reference-page">
+
+<div class="lesson-meta">
+  <span>Git 参考页</span>
+  <span>5 组交互图</span>
+  <span>配合 README 第 0 / 3 / 4 / 9 章</span>
+  <span>建议先读第 0、4 章</span>
+</div>
+
+<h1>Git 状态与引用：五组图看懂</h1>
+
+<p>这份参考页把 Git 里最容易混的几件事画成图：<b>东西放在哪</b>（工作区、暂存区、本地仓库、远程）、<b>指针指向谁</b>（<code>HEAD</code>、<code>main</code>、<code>origin/main</code>）、以及 <b>失败之后怎么退</b>。每张图都可以点击放大，图下方的命令是当前状态对应的最小操作集。</p>
+
+<div class="callout teacher">
+  <b>怎么用：</b>先在图里找到你现在的状态，再读下面的命令，最后去 <a href="../README.md#12-附录目录文件与沙箱使用说明">sandbox</a> 里动手。图只负责帮你判断「现在在哪、下一步会改哪一层」；熟练度来自实际操作，不来自背图。
+</div>
+
+<p class="meta">图例：<span class="git-legend"><span><i></i>本地提交</span><span><i class="remote"></i>远程提交</span><span><i class="head"></i>HEAD / 危险操作</span><span><i class="ghost"></i>已不在当前分支上的提交</span></span></p>
+
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;overflow:hidden">
+  <defs>
+    <marker id="git-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="git-arrow-head"/>
+    </marker>
+    <marker id="git-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="git-arrow-head accent"/>
+    </marker>
+    <marker id="git-arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="git-arrow-head ok"/>
+    </marker>
+    <marker id="git-arrow-err" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="git-arrow-head err"/>
+    </marker>
+  </defs>
+</svg>
+
+<div class="diagram-tabs" data-tabs data-initial="0">
+  <div class="tab-bar" role="tablist" aria-label="Git 状态与引用参考图">
+    <button class="tab-btn" data-tab="0" type="button">① 四区状态</button>
+    <button class="tab-btn" data-tab="1" type="button">② 引用指针</button>
+    <button class="tab-btn" data-tab="2" type="button">③ 推送被拒</button>
+    <button class="tab-btn" data-tab="3" type="button">④ merge vs rebase</button>
+    <button class="tab-btn" data-tab="4" type="button">⑤ reset vs revert</button>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ① 四区状态 -->
+  <!-- ============================================================ -->
+  <div class="tab-panel" data-panel="0" data-status="<b>add</b> 只动暂存区，<b>commit</b> 只动本地仓库，<b>push</b> 才动远程；<b>fetch</b> 只更新 origin/main，不碰工作区。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 500" role="img" aria-label="Git 四个区域以及 add、commit、push、fetch、pull 的数据流向">
+        <text x="20" y="28" class="git-panel-title">① 同一份项目，四个位置</text>
+        <text x="20" y="50" class="git-note">命令只搬运变化；没有哪条命令会同时改四个地方。</text>
+
+        <!-- 工作区 -->
+        <rect x="20" y="70" width="165" height="180" rx="10" class="git-zone work"/>
+        <text x="36" y="96" class="git-zone-title">工作区</text>
+        <text x="36" y="114" class="git-zone-sub">Working Directory</text>
+        <rect x="34" y="132" width="137" height="28" rx="4" class="git-file"/>
+        <text x="44" y="151" class="git-file-label">README.md</text>
+        <text x="162" y="151" class="git-file-mark" text-anchor="end">M</text>
+        <rect x="34" y="166" width="137" height="28" rx="4" class="git-file"/>
+        <text x="44" y="185" class="git-file-label">notes.md</text>
+        <text x="162" y="185" class="git-file-mark" text-anchor="end">M</text>
+        <text x="36" y="226" class="git-sub">你正在编辑的文件</text>
+
+        <!-- 暂存区 -->
+        <rect x="205" y="70" width="165" height="180" rx="10" class="git-zone index"/>
+        <text x="221" y="96" class="git-zone-title">暂存区</text>
+        <text x="221" y="114" class="git-zone-sub">Staging / Index</text>
+        <rect x="219" y="132" width="137" height="28" rx="4" class="git-file"/>
+        <text x="229" y="151" class="git-file-label">README.md</text>
+        <text x="347" y="151" class="git-file-mark" text-anchor="end">A</text>
+        <rect x="219" y="166" width="137" height="28" rx="4" class="git-file"/>
+        <text x="229" y="185" class="git-file-label">notes.md</text>
+        <text x="347" y="185" class="git-file-mark" text-anchor="end">A</text>
+        <text x="221" y="226" class="git-sub">下次 commit 的内容</text>
+
+        <!-- 本地仓库 -->
+        <rect x="390" y="70" width="165" height="180" rx="10" class="git-zone local"/>
+        <text x="406" y="96" class="git-zone-title">本地仓库</text>
+        <text x="406" y="114" class="git-zone-sub">.git（完整历史）</text>
+        <circle cx="420" cy="180" r="15" class="git-commit"/>
+        <text x="420" y="185" class="git-hash">c1</text>
+        <circle cx="470" cy="180" r="15" class="git-commit"/>
+        <text x="470" y="185" class="git-hash">c2</text>
+        <circle cx="520" cy="180" r="15" class="git-commit"/>
+        <text x="520" y="185" class="git-hash">c3</text>
+        <line x1="435" y1="180" x2="453" y2="180" class="git-edge"/>
+        <line x1="485" y1="180" x2="503" y2="180" class="git-edge"/>
+        <text x="520" y="146" class="git-ref" text-anchor="middle"><tspan class="git-ref head">HEAD</tspan> → main</text>
+        <text x="470" y="226" class="git-ref remote" text-anchor="middle">origin/main</text>
+        <line x1="470" y1="214" x2="470" y2="199" class="git-edge dashed" marker-end="url(#git-arrow)"/>
+
+        <!-- 远程仓库 -->
+        <rect x="575" y="70" width="165" height="180" rx="10" class="git-zone remote"/>
+        <text x="591" y="96" class="git-zone-title">远程仓库</text>
+        <text x="591" y="114" class="git-zone-sub">GitHub（另一份仓库）</text>
+        <circle cx="615" cy="180" r="15" class="git-commit remote"/>
+        <text x="615" y="185" class="git-hash">c1</text>
+        <circle cx="675" cy="180" r="15" class="git-commit remote"/>
+        <text x="675" y="185" class="git-hash">c2</text>
+        <line x1="630" y1="180" x2="658" y2="180" class="git-edge"/>
+        <text x="675" y="146" class="git-ref remote" text-anchor="middle">main</text>
+        <text x="591" y="226" class="git-sub">origin 指向它</text>
+
+        <!-- add / commit / push：实线写入 -->
+        <path d="M 80 250 V 285 H 245 V 254" class="git-edge accent" marker-end="url(#git-arrow-accent)"/>
+        <text x="162" y="278" class="git-cmd" text-anchor="middle">git add</text>
+
+        <path d="M 285 250 V 315 H 460 V 254" class="git-edge accent" marker-end="url(#git-arrow-accent)"/>
+        <text x="372" y="308" class="git-cmd" text-anchor="middle">git commit</text>
+
+        <path d="M 500 250 V 345 H 660 V 254" class="git-edge accent" marker-end="url(#git-arrow-accent)"/>
+        <text x="580" y="338" class="git-cmd" text-anchor="middle">git push</text>
+
+        <!-- fetch / pull：虚线同步 -->
+        <path d="M 720 250 V 410 H 555 V 254" class="git-edge dashed" marker-end="url(#git-arrow)"/>
+        <text x="620" y="403" class="git-cmd" text-anchor="middle">git fetch：只更新 origin/main</text>
+
+        <path d="M 735 250 V 460 H 185 V 254" class="git-edge dashed" marker-end="url(#git-arrow)"/>
+        <text x="460" y="453" class="git-cmd" text-anchor="middle">git pull = fetch + merge（会碰工作区）</text>
+
+        <text x="20" y="486" class="git-note">实线 = 写入；虚线 = 同步 / 撤销。fetch 只动 .git 里的 origin/main；pull 才会改工作区。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+      <figcaption>四区模型：命令是搬运工，每次只改其中一层。</figcaption>
+    </figure>
+    <div class="git-panel-notes">
+      <p><b>看图要点：</b><code>git add</code> 写暂存区；<code>git commit</code> 写本地 <code>.git</code>；<code>git push</code> 才写远程。<code>git fetch</code> 只更新本地缓存的 <code>origin/main</code>，工作区一个文件都不动；<code>git pull</code> 才会碰工作区。</p>
+      <p><b>撤销也按图层分：</b><code>git restore</code> 把文件写回工作区；<code>git restore --staged</code> 只把改动撤出暂存区，文件内容不变；<code>git reset</code> / <code>git revert</code> 见第 ⑤ 页。</p>
+      <p><b>对应 README：</b><a href="../README.md#02-三个区域">0.2 三个区域</a>、<a href="../README.md#43-fetch-vs-pull-vs-push">4.3 fetch vs pull vs push</a>。</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ② 引用指针 -->
+  <!-- ============================================================ -->
+  <div class="tab-panel" data-panel="1" data-status="<b>origin/main</b> 是本地 .git 里的缓存，不是 GitHub 的实时状态；<b>git fetch</b> 才会移动它。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 380" role="img" aria-label="HEAD、main、origin/main 三个引用指针与 fetch 前后的变化">
+        <text x="20" y="28" class="git-panel-title">② 三个指针：HEAD、main、origin/main</text>
+        <text x="20" y="50" class="git-note">origin/main 不是远程实时状态，而是本地 .git 里的一张「上次同步快照」。</text>
+
+        <!-- 本地仓库 -->
+        <rect x="20" y="75" width="430" height="180" rx="10" class="git-zone local"/>
+        <text x="36" y="98" class="git-zone-title">本地仓库 .git</text>
+        <text x="36" y="116" class="git-zone-sub">引用（ref）只是指向 commit 的可移动指针</text>
+
+        <circle cx="95" cy="190" r="20" class="git-commit"/>
+        <text x="95" y="195" class="git-hash">c1</text>
+        <circle cx="185" cy="190" r="20" class="git-commit"/>
+        <text x="185" y="195" class="git-hash">c2</text>
+        <circle cx="275" cy="190" r="20" class="git-commit"/>
+        <text x="275" y="195" class="git-hash">c3</text>
+        <circle cx="365" cy="190" r="20" class="git-commit ghost"/>
+        <text x="365" y="195" class="git-hash">c4</text>
+        <line x1="115" y1="190" x2="163" y2="190" class="git-edge"/>
+        <line x1="205" y1="190" x2="253" y2="190" class="git-edge"/>
+        <line x1="295" y1="190" x2="343" y2="190" class="git-edge dashed"/>
+
+        <text x="275" y="138" class="git-ref" text-anchor="middle"><tspan class="git-ref head">HEAD</tspan> → main</text>
+        <text x="275" y="240" class="git-ref remote" text-anchor="middle">origin/main</text>
+        <line x1="275" y1="228" x2="275" y2="213" class="git-edge dashed" marker-end="url(#git-arrow)"/>
+        <text x="365" y="240" class="git-ref remote ghost" text-anchor="middle">origin/main</text>
+        <line x1="365" y1="228" x2="365" y2="213" class="git-edge dashed" marker-end="url(#git-arrow)"/>
+
+        <!-- 远程仓库 -->
+        <rect x="490" y="75" width="250" height="180" rx="10" class="git-zone remote"/>
+        <text x="506" y="98" class="git-zone-title">GitHub 上的真实仓库</text>
+        <text x="506" y="116" class="git-zone-sub">这里才是「远程现在有什么」</text>
+        <circle cx="520" cy="190" r="18" class="git-commit remote"/>
+        <text x="520" y="195" class="git-hash">c1</text>
+        <circle cx="585" cy="190" r="18" class="git-commit remote"/>
+        <text x="585" y="195" class="git-hash">c2</text>
+        <circle cx="650" cy="190" r="18" class="git-commit remote"/>
+        <text x="650" y="195" class="git-hash">c3</text>
+        <circle cx="715" cy="190" r="18" class="git-commit remote"/>
+        <text x="715" y="195" class="git-hash">c4</text>
+        <line x1="538" y1="190" x2="566" y2="190" class="git-edge"/>
+        <line x1="603" y1="190" x2="631" y2="190" class="git-edge"/>
+        <line x1="668" y1="190" x2="696" y2="190" class="git-edge"/>
+        <text x="715" y="150" class="git-ref remote" text-anchor="middle">main</text>
+        <text x="506" y="238" class="git-sub">c4 是同事刚推的；本地还不知道</text>
+
+        <!-- fetch 箭头 -->
+        <path d="M 715 255 V 300 H 365 V 255" class="git-edge dashed" marker-end="url(#git-arrow)"/>
+        <text x="540" y="292" class="git-cmd" text-anchor="middle">git fetch：下载 c4 + 移动 origin/main</text>
+
+        <text x="20" y="332" class="git-note">fetch 前：本地 main = c3，origin/main = c3；fetch 后：origin/main = c4，main 仍 = c3。</text>
+        <text x="20" y="352" class="git-note">git status 这时才会显示 behind 1——它比较的是 main 与 origin/main，不是与 GitHub 实时比较。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+      <figcaption>引用图：分支和远程跟踪分支都只是本地指针；fetch 更新「地图」，不改变你的工作。</figcaption>
+    </figure>
+    <div class="git-panel-notes">
+      <p><b>看图要点：</b><code>HEAD</code> 指向当前分支（通常）；<code>main</code> 指向本地最新提交；<code>origin/main</code> 指向「上次 fetch 时远程 main 的位置」。</p>
+      <p><b>最容易误会：</b>以为 <code>origin/main</code> 就是 GitHub 的实时状态。不是。它只是本地缓存；同事推了新提交后，你不 fetch，本地根本不知道。</p>
+      <p><b>对应 README：</b><a href="../README.md#04-本地仓库-vs-远程仓库">0.4 本地仓库 vs 远程仓库</a>、<a href="../README.md#42-远程跟踪分支与--u">4.2 远程跟踪分支与 -u</a>。</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ③ 推送被拒 -->
+  <!-- ============================================================ -->
+  <div class="tab-panel" data-panel="2" data-status="push 只接受快进：先 <b>fetch</b> 看清远程，再 <b>pull --rebase</b> 把自己的提交接到最新提交之后，最后才 push。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 550" role="img" aria-label="non-fast-forward 推送被拒后的三步自救流程">
+        <text x="20" y="28" class="git-panel-title">③ push 被拒：non-fast-forward 的三步自救</text>
+        <text x="20" y="50" class="git-note">远程有 C、你没有；你有 D、远程没有。直接 push 会被拒绝，因为接受 D 会丢掉 C。</text>
+
+        <!-- 步骤 1 -->
+        <text x="20" y="88" class="git-label">① 直接 push：被拒</text>
+        <circle cx="90" cy="115" r="18" class="git-commit remote"/>
+        <text x="90" y="120" class="git-hash">A</text>
+        <circle cx="170" cy="115" r="18" class="git-commit remote"/>
+        <text x="170" y="120" class="git-hash">B</text>
+        <circle cx="250" cy="115" r="18" class="git-commit remote"/>
+        <text x="250" y="120" class="git-hash">C</text>
+        <line x1="108" y1="115" x2="152" y2="115" class="git-edge"/>
+        <line x1="188" y1="115" x2="232" y2="115" class="git-edge"/>
+        <text x="250" y="82" class="git-ref remote" text-anchor="middle">main</text>
+
+        <circle cx="90" cy="190" r="18" class="git-commit"/>
+        <text x="90" y="195" class="git-hash">A</text>
+        <circle cx="170" cy="190" r="18" class="git-commit"/>
+        <text x="170" y="195" class="git-hash">B</text>
+        <circle cx="250" cy="190" r="18" class="git-commit"/>
+        <text x="250" y="195" class="git-hash">D</text>
+        <line x1="108" y1="190" x2="152" y2="190" class="git-edge"/>
+        <line x1="188" y1="190" x2="232" y2="190" class="git-edge"/>
+        <text x="250" y="226" class="git-ref" text-anchor="middle">main</text>
+
+        <path d="M 270 175 V 135" class="git-edge err" marker-end="url(#git-arrow-err)"/>
+        <text x="305" y="158" class="git-bad">✕</text>
+        <text x="325" y="145" class="git-bad">! [rejected]</text>
+        <text x="325" y="163" class="git-bad">non-fast-forward (fetch first)</text>
+        <text x="325" y="185" class="git-cmd">git push</text>
+        <text x="400" y="205" class="git-note">远程已有 C；接受 D 会丢掉 C。</text>
+
+        <!-- 步骤 2 -->
+        <text x="20" y="260" class="git-label">② git fetch：只更新 origin/main</text>
+        <circle cx="90" cy="290" r="18" class="git-commit remote"/>
+        <text x="90" y="295" class="git-hash">A</text>
+        <circle cx="170" cy="290" r="18" class="git-commit remote"/>
+        <text x="170" y="295" class="git-hash">B</text>
+        <circle cx="250" cy="290" r="18" class="git-commit remote"/>
+        <text x="250" y="295" class="git-hash">C</text>
+        <line x1="108" y1="290" x2="152" y2="290" class="git-edge"/>
+        <line x1="188" y1="290" x2="232" y2="290" class="git-edge"/>
+
+        <circle cx="90" cy="360" r="18" class="git-commit"/>
+        <text x="90" y="365" class="git-hash">A</text>
+        <circle cx="170" cy="360" r="18" class="git-commit"/>
+        <text x="170" y="365" class="git-hash">B</text>
+        <circle cx="250" cy="360" r="18" class="git-commit"/>
+        <text x="250" y="365" class="git-hash">D</text>
+        <line x1="108" y1="360" x2="152" y2="360" class="git-edge"/>
+        <line x1="188" y1="360" x2="232" y2="360" class="git-edge"/>
+
+        <text x="300" y="305" class="git-ref remote">origin/main = C</text>
+        <text x="300" y="375" class="git-ref">main = D</text>
+        <text x="420" y="310" class="git-cmd">git fetch</text>
+        <text x="420" y="335" class="git-note">地图更新到 C；本地 main 和 D 都没动。</text>
+
+        <!-- 步骤 3 -->
+        <text x="20" y="440" class="git-label">③ git pull --rebase 后 push：成功</text>
+        <circle cx="90" cy="470" r="18" class="git-commit"/>
+        <text x="90" y="475" class="git-hash">A</text>
+        <circle cx="170" cy="470" r="18" class="git-commit"/>
+        <text x="170" y="475" class="git-hash">B</text>
+        <circle cx="250" cy="470" r="18" class="git-commit"/>
+        <text x="250" y="475" class="git-hash">C</text>
+        <circle cx="330" cy="470" r="18" class="git-commit new"/>
+        <text x="330" y="475" class="git-hash">D′</text>
+        <line x1="108" y1="470" x2="152" y2="470" class="git-edge"/>
+        <line x1="188" y1="470" x2="232" y2="470" class="git-edge"/>
+        <line x1="268" y1="470" x2="312" y2="470" class="git-edge ok"/>
+        <text x="400" y="505" class="git-ref" text-anchor="middle">main = origin/main = D′</text>
+        <text x="400" y="484" class="git-ok">✓ 快进成功</text>
+
+        <text x="20" y="535" class="git-note">D′ 是 D 的副本：内容一样，但父提交变成 C，哈希也变了。push 这时只做快进。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+      <figcaption>推送被拒不是权限问题，而是历史分叉：先把远程的 C 接进来，再推你的 D。</figcaption>
+    </figure>
+    <div class="git-panel-notes">
+      <p><b>三步：</b><code>git fetch</code> 看清远程有什么 → <code>git pull --rebase</code> 把你的提交重放到最新提交之后 → <code>git push</code>。</p>
+      <p><b>不要条件反射：</b>不要用 <code>--force</code> 把远程的 C 抹掉。确需强推自己的分支时用 <code>git push --force-with-lease</code>；共享分支永远不要强推。</p>
+      <p><b>对应 README：</b><a href="../README.md#44-为什么会被拒绝non-fast-forward">4.4 为什么会被拒绝</a>、<a href="../README.md#91-push-相关">9.1 push 相关</a>。</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ④ merge vs rebase -->
+  <!-- ============================================================ -->
+  <div class="tab-panel" data-panel="3" data-status="<b>merge</b> 保留分叉和合并节点，<b>rebase</b> 重写提交成直线；已 push 到共享分支的提交不要 rebase。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 280" role="img" aria-label="merge 保留分叉并生成合并提交 M">
+        <text x="20" y="26" class="git-panel-title">merge：保留分叉，生成合并节点 M</text>
+        <text x="20" y="46" class="git-note">已推送的历史不动；C 的哈希不变，M 是一个新的合并提交。</text>
+
+        <circle cx="80" cy="120" r="18" class="git-commit"/>
+        <text x="80" y="125" class="git-hash">A</text>
+        <circle cx="170" cy="120" r="18" class="git-commit"/>
+        <text x="170" y="125" class="git-hash">B</text>
+        <circle cx="290" cy="120" r="18" class="git-commit"/>
+        <text x="290" y="125" class="git-hash">D</text>
+        <circle cx="290" cy="200" r="18" class="git-commit"/>
+        <text x="290" y="205" class="git-hash">C</text>
+        <circle cx="410" cy="160" r="18" class="git-commit new"/>
+        <text x="410" y="165" class="git-hash">M</text>
+
+        <line x1="98" y1="120" x2="152" y2="120" class="git-edge"/>
+        <line x1="188" y1="120" x2="272" y2="120" class="git-edge"/>
+        <path d="M 170 138 V 200 H 272" class="git-edge"/>
+        <line x1="308" y1="125" x2="392" y2="153" class="git-edge"/>
+        <line x1="308" y1="195" x2="392" y2="167" class="git-edge"/>
+
+        <text x="290" y="88" class="git-ref" text-anchor="middle">main（合并前）</text>
+        <text x="290" y="238" class="git-ref" text-anchor="middle">feature</text>
+        <text x="410" y="128" class="git-ref" text-anchor="middle">main（合并后）</text>
+
+        <text x="470" y="105" class="git-note">M 有两个父提交：D 和 C。</text>
+        <text x="470" y="125" class="git-note">历史保留分叉，适合共享分支。</text>
+        <text x="470" y="205" class="git-cmd">git merge feature</text>
+        <text x="470" y="228" class="git-note">想强制留下合并节点：</text>
+        <text x="470" y="250" class="git-cmd">git merge --no-ff feature</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+      <figcaption>merge：两条线都保留，最后用一个合并提交把它们接起来。</figcaption>
+    </figure>
+
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 300" role="img" aria-label="rebase 把 feature 的提交重放到 main 之后，形成直线历史">
+        <text x="20" y="26" class="git-panel-title">rebase：重放提交，历史成一条线</text>
+        <text x="20" y="46" class="git-note">C 被复制成 C′；内容一样，但父提交和哈希都变了，没有合并节点。</text>
+
+        <circle cx="80" cy="120" r="18" class="git-commit"/>
+        <text x="80" y="125" class="git-hash">A</text>
+        <circle cx="170" cy="120" r="18" class="git-commit"/>
+        <text x="170" y="125" class="git-hash">B</text>
+        <circle cx="290" cy="120" r="18" class="git-commit"/>
+        <text x="290" y="125" class="git-hash">D</text>
+        <circle cx="290" cy="200" r="18" class="git-commit ghost"/>
+        <text x="290" y="205" class="git-hash">C</text>
+        <circle cx="410" cy="120" r="18" class="git-commit new"/>
+        <text x="410" y="125" class="git-hash">C′</text>
+
+        <line x1="98" y1="120" x2="152" y2="120" class="git-edge"/>
+        <line x1="188" y1="120" x2="272" y2="120" class="git-edge"/>
+        <path d="M 170 138 V 200 H 272" class="git-edge dashed"/>
+        <line x1="308" y1="120" x2="392" y2="120" class="git-edge ok"/>
+
+        <text x="290" y="88" class="git-ref" text-anchor="middle">main</text>
+        <text x="290" y="238" class="git-ref ghost" text-anchor="middle">feature（rebase 前）</text>
+        <text x="410" y="88" class="git-ref" text-anchor="middle">feature（rebase 后）</text>
+
+        <text x="470" y="105" class="git-note">C′ 的父提交变成 D；</text>
+        <text x="470" y="125" class="git-note">随后 main 可以快进到 C′。</text>
+        <text x="470" y="205" class="git-cmd">git rebase main</text>
+        <text x="470" y="228" class="git-note">已推送的提交不要 rebase；</text>
+        <text x="470" y="250" class="git-note">别人手里的 C 会对不上。</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+      <figcaption>rebase：把 feature 的提交搬到 main 后面，历史成一条直线，但提交哈希会变。</figcaption>
+    </figure>
+
+    <div class="git-panel-notes">
+      <p><b>怎么选：</b><code>merge</code> 保留完整分叉，适合共享分支和想留下「这里发生过合并」的场景；<code>rebase</code> 让历史线性、干净，适合整理自己尚未推送的提交。</p>
+      <p><b>黄金法则：</b>已经 push 到共享分支的提交，不要 rebase。确需强推自己的分支时用 <code>--force-with-lease</code>，不要用裸 <code>--force</code>。</p>
+      <p><b>对应 README：</b><a href="../README.md#32-合并的三种结局">3.2 合并的三种结局</a>、<a href="../README.md#34-rebase-与它的黄金法则">3.4 rebase 与它的黄金法则</a>。</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ⑤ reset vs revert -->
+  <!-- ============================================================ -->
+  <div class="tab-panel" data-panel="4" data-status="<b>reset</b> 改写本地历史，适合未推送；<b>revert</b> 追加反向提交，适合已推送。">
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 320" role="img" aria-label="git reset 把 main 指针移回上一个提交，三种模式决定改动去向">
+        <text x="20" y="26" class="git-panel-title">reset：移动分支指针，改写本地历史</text>
+        <text x="20" y="46" class="git-note">只适合未推送的提交；--soft / --mixed / --hard 决定 D 的改动去哪。</text>
+
+        <circle cx="80" cy="115" r="18" class="git-commit"/>
+        <text x="80" y="120" class="git-hash">A</text>
+        <circle cx="170" cy="115" r="18" class="git-commit"/>
+        <text x="170" y="120" class="git-hash">B</text>
+        <circle cx="260" cy="115" r="18" class="git-commit"/>
+        <text x="260" y="120" class="git-hash">C</text>
+        <circle cx="350" cy="115" r="18" class="git-commit ghost"/>
+        <text x="350" y="120" class="git-hash">D</text>
+        <line x1="98" y1="115" x2="152" y2="115" class="git-edge"/>
+        <line x1="188" y1="115" x2="242" y2="115" class="git-edge"/>
+        <line x1="278" y1="115" x2="332" y2="115" class="git-edge dashed"/>
+
+        <text x="350" y="84" class="git-ref ghost" text-anchor="middle">main（reset 前）</text>
+        <text x="260" y="84" class="git-ref" text-anchor="middle">main</text>
+        <path d="M 350 137 Q 305 172 269 140" class="git-edge err" marker-end="url(#git-arrow-err)"/>
+        <text x="305" y="192" class="git-cmd" text-anchor="middle">git reset HEAD~1</text>
+
+        <text x="80" y="230" class="git-cmd">--soft</text>
+        <text x="160" y="230" class="git-note">D 的改动 → 暂存区（可重新 commit）</text>
+        <text x="80" y="258" class="git-cmd">--mixed</text>
+        <text x="160" y="258" class="git-note">D 的改动 → 工作区（默认）</text>
+        <text x="80" y="286" class="git-cmd">--hard</text>
+        <text x="160" y="286" class="git-note">D 的改动 → 丢弃（不可恢复）</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+      <figcaption>reset：把 main 指针往回拨；D 不再属于当前分支，但对象还在 reflog 里。</figcaption>
+    </figure>
+
+    <figure class="git-figure figure-zoom" data-zoomable>
+      <svg viewBox="0 0 760 280" role="img" aria-label="git revert 追加一个反向提交 R，抵消 C 的改动">
+        <text x="20" y="26" class="git-panel-title">revert：追加一个反向提交 R</text>
+        <text x="20" y="46" class="git-note">已推送的提交用 revert；原来的 C 仍然留在历史里，历史只追加、不改写。</text>
+
+        <circle cx="80" cy="115" r="18" class="git-commit"/>
+        <text x="80" y="120" class="git-hash">A</text>
+        <circle cx="170" cy="115" r="18" class="git-commit"/>
+        <text x="170" y="120" class="git-hash">B</text>
+        <circle cx="260" cy="115" r="18" class="git-commit"/>
+        <text x="260" y="120" class="git-hash">C</text>
+        <circle cx="350" cy="115" r="18" class="git-commit"/>
+        <text x="350" y="120" class="git-hash">D</text>
+        <circle cx="440" cy="115" r="18" class="git-commit new"/>
+        <text x="440" y="120" class="git-hash">R</text>
+        <line x1="98" y1="115" x2="152" y2="115" class="git-edge"/>
+        <line x1="188" y1="115" x2="242" y2="115" class="git-edge"/>
+        <line x1="278" y1="115" x2="332" y2="115" class="git-edge"/>
+        <line x1="368" y1="115" x2="422" y2="115" class="git-edge ok"/>
+
+        <text x="440" y="84" class="git-ref" text-anchor="middle">main</text>
+        <text x="260" y="152" class="git-ref" text-anchor="middle">C（被撤销，但仍存在）</text>
+        <text x="440" y="152" class="git-ref" text-anchor="middle">R = Revert "C"</text>
+
+        <text x="500" y="105" class="git-note">R 抵消 C 的改动；</text>
+        <text x="500" y="125" class="git-note">C 和 D 都还在历史里。</text>
+        <text x="500" y="205" class="git-cmd">git revert C</text>
+      </svg>
+      <button class="zoom-badge" type="button">⤢ 点击放大</button>
+      <figcaption>revert：不删历史，而是用一个新的反向提交把错误「抵消掉」。</figcaption>
+    </figure>
+
+    <div class="git-panel-notes">
+      <p><b>未推送：</b>可以用 <code>reset</code> 整理本地历史。<code>--soft</code> 保留改动在暂存区，<code>--mixed</code> 留在工作区，<code>--hard</code> 直接丢弃——先确认没有想保留的改动。</p>
+      <p><b>已推送：</b>一律用 <code>revert</code>。它追加一个新提交，不改变别人已经拿到的历史；<code>reset</code> 后强推会打乱协作者。</p>
+      <p><b>对应 README：</b><a href="../README.md#2-本地基础add--commit--log">第 2 章撤销操作</a>、<a href="../README.md#91-push-相关">9.1 push 相关</a>。</p>
+    </div>
+  </div>
+
+  <p class="tab-status" data-tab-status></p>
+</div>
+
+<h2>命令落在哪一层</h2>
+
+<table>
+  <tr>
+    <th>命令</th>
+    <th>读 / 写哪一层</th>
+    <th>改历史？</th>
+    <th>典型用途</th>
+  </tr>
+  <tr>
+    <td><code>git add</code></td>
+    <td>工作区 → 暂存区</td>
+    <td>否</td>
+    <td>挑选下一次 commit 的内容</td>
+  </tr>
+  <tr>
+    <td><code>git commit</code></td>
+    <td>暂存区 → 本地仓库</td>
+    <td>追加</td>
+    <td>建立存档点</td>
+  </tr>
+  <tr>
+    <td><code>git push</code></td>
+    <td>本地仓库 → 远程仓库</td>
+    <td>不改本地历史</td>
+    <td>上传提交；只接受快进</td>
+  </tr>
+  <tr>
+    <td><code>git fetch</code></td>
+    <td>远程 → 本地 <code>origin/*</code></td>
+    <td>否</td>
+    <td>更新远程地图，不碰工作区</td>
+  </tr>
+  <tr>
+    <td><code>git pull</code></td>
+    <td>远程 → 本地分支 + 工作区</td>
+    <td>merge 可能新增合并提交；rebase 会改写本地未推送提交</td>
+    <td>同步并整合远程变化</td>
+  </tr>
+  <tr>
+    <td><code>git restore</code></td>
+    <td>暂存区 / HEAD → 工作区</td>
+    <td>否</td>
+    <td>撤销未提交的文件改动</td>
+  </tr>
+  <tr>
+    <td><code>git restore --staged</code></td>
+    <td>HEAD → 暂存区</td>
+    <td>否</td>
+    <td>把改动撤出暂存区，文件内容不变</td>
+  </tr>
+  <tr>
+    <td><code>git reset</code></td>
+    <td>本地分支指针 + 暂存区 / 工作区</td>
+    <td>是（本地）</td>
+    <td>撤销未推送提交；三种模式决定改动去向</td>
+  </tr>
+  <tr>
+    <td><code>git revert</code></td>
+    <td>本地分支（追加新提交）</td>
+    <td>追加</td>
+    <td>撤销已推送提交；历史不改写</td>
+  </tr>
+</table>
+
+<div class="ref-quick">
+  <div class="ref-card">
+    <h3>先跑一遍沙箱</h3>
+    <p><a href="../README.md#12-附录目录文件与沙箱使用说明">README 第 12 章</a> 有完整剧本：首推、推分支、模拟同事、撞上 non-fast-forward、pull --rebase 自救。</p>
+  </div>
+  <div class="ref-card">
+    <h3>被拒时的口诀</h3>
+    <p><code>fetch</code> → 看 → <code>pull --rebase</code> → <code>push</code>。不要用 <code>--force</code> 覆盖别人的提交。</p>
+  </div>
+  <div class="ref-card">
+    <h3>已推送的撤销</h3>
+    <p>用 <code>revert</code>，不要用 <code>reset</code> + 强推。前者追加历史，后者改写历史。</p>
+  </div>
+</div>
+
+<div class="git-source-note">
+  <h2>权威来源与下一步</h2>
+  <ul>
+    <li><b>主读本：</b><a href="https://git-scm.com/book/zh/v2">Pro Git 中文版</a>——第 2 章「Git 基础」、第 3 章「Git 分支」、第 7 章「Git 工具」。</li>
+    <li><b>可视化练习：</b><a href="https://learngitbranching.js.org/?locale=zh_CN">Learn Git Branching</a>——把 merge / rebase / reset 的指针变化做成可操作关卡。</li>
+    <li><b>官方参考：</b><code>git help merge</code>、<code>git help rebase</code>、<code>git help reset</code>，以及 <a href="https://docs.github.com/en/get-started/using-git/about-git-rebase">GitHub Docs: About Git rebase</a>。</li>
+    <li><b>配套正文：</b><a href="../README.md">Git 学习文档</a>——命令细节、认证、PR 工作流和错误速查表都在那里。</li>
+  </ul>
+  <p>看完还有不清楚的图或命令，直接问 AI 老师；可以要求用 <code>Git/sandbox</code> 现场演示某个状态是怎么走到的。</p>
+</div>
+
+<p class="lesson-nav">
+  回到 <a href="../README.md">Git 学习文档</a> ·
+  下一步：在 <a href="../README.md#12-附录目录文件与沙箱使用说明">sandbox</a> 里亲手制造一次 non-fast-forward，再用本文第 ③ 页的方法救回来。
+</p>
+
+<script src="../assets/diagram-tabs.js"></script>
+<script src="../assets/zoomable-figure.js"></script>
+</body>
+</html>
