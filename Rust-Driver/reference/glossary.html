@@ -96,6 +96,18 @@
 </dl>
 
 <dl class="term">
+  <dt>闭包（closure）</dt>
+  <dd>能捕获定义处环境的匿名函数；语法为 |参数| 表达式。捕获方式有不可变借用、可变借用、move 所有权；按可调用能力实现 Fn / FnMut / FnOnce。</dd>
+  <dd class="avoid">避免：只叫匿名函数（捕获环境才是关键）、lambda（语境词）</dd>
+</dl>
+
+<dl class="term">
+  <dt>迭代器（iterator）</dt>
+  <dd>实现 Iterator trait 的值，核心方法是 next()，返回 Option&lt;元素&gt;；惰性产出元素。iter() / iter_mut() / into_iter() 分别产出 &amp;T / &amp;mut T / T；适配器（map、filter、enumerate、rev）只登记，消费者（collect、sum、for）才驱动整条链。口语可叫“游标”，书面一律用“迭代器”。</dd>
+  <dd class="avoid">避免：数组、集合（迭代器不是数据容器）</dd>
+</dl>
+
+<dl class="term">
   <dt>可变绑定（mutable binding）</dt>
   <dd>用 mut 声明的变量，其值可以被修改；默认绑定不可变。</dd>
   <dd class="avoid">避免：变量（不修饰时一律指不可变绑定）</dd>
@@ -178,7 +190,7 @@
 </dl>
 
 <hr>
-<p class="meta">生命周期（lifetime）/ 闭包（closure）/ 迭代器（iterator）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
+<p class="meta">生命周期（lifetime）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
 术语有争议或想改定义，直接告诉我——这份表的措辞以你用得顺手为准。</p>
 
 </body>

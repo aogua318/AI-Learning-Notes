@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第四课：闭包与迭代器 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+<style>
+  /* 本课流水线示意图：盒子 + 箭头，窄屏自动换行 */
+  .pipe { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 1rem 0; }
+  .pipe .node { border: 1px solid var(--line); background: var(--card-bg); border-radius: 6px; padding: 0.42rem 0.6rem; font-family: 'Cascadia Code', Consolas, monospace; font-size: 0.86rem; }
+  .pipe .node small { display: block; color: var(--ink-soft); font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; font-size: 0.75rem; margin-top: 0.15rem; }
+  .pipe .arrow { color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0004</span>
+  <span>预计 15–20 分钟</span>
+  <span>前置：第三课 + 课后任务三项完成</span>
+  <span>阶段：语言预备期（第 4 课 / 共 4 周）</span>
+</div>
+
+<h1>第四课：闭包与迭代器——把循环写成流水线</h1>
+
+<div class="callout teacher">
+  <b>第三课验收通过：</b>first_word 的 WoL 实现正确，半开区间三理由已能脱离 first_word 复述，E0502 的“clear 交出所有权”已纠正为“可变借用与不可变借用重叠”，rustlings strings1–4 也过了。今天收的，是你其实已经用过、但还没命名的东西：vecs2 的 <code>.iter().map(|x| x * 2).collect()</code>、strings3 的 <code>.iter().enumerate().rev()</code>、Book 版 first_word 的 <code>bytes.iter().enumerate()</code>。今天只做一件事：把这三条链拆开，给每个零件命名——学完你能一眼读出“谁借用、谁拥有、谁在什么时候执行”。
+</div>
+
+<h2>1. 先看你写过的两条链</h2>
+
+<p>vecs2 里你已经写过这条：</p>
+
+<pre><code>// input: &amp;[i32]，返回类型是 Vec&lt;i32&gt;
+input.iter().map(|element| element * 2).collect()</code></pre>
+
+<p>逐段读：</p>
+<ul>
+  <li><code>iter()</code>：返回一个<b>迭代器（游标）</b>；游标每次给你的元素是 <code>&amp;i32</code>——借用原集合里的元素，不复制；</li>
+  <li><code>map(|element| ...)</code>：这里的 <code>|element| ...</code> 就是<b>闭包</b>；<code>element</code> 是 <code>&amp;i32</code>，闭包返回 <code>i32</code>；</li>
+  <li><code>collect()</code>：把这条流水线的结果收进集合；具体收成什么，由函数返回类型 <code>Vec&lt;i32&gt;</code> 推断。</li>
+</ul>
+
+<p>strings3 里你还写过这条：</p>
+
+<pre><code>// bytes: &amp;[u8]
+for (i, &amp;b) in bytes.iter().enumerate().rev() { ... }</code></pre>
+
+<ul>
+  <li><code>bytes.iter()</code> 返回游标；游标每次给你的元素是 <code>&amp;u8</code>；</li>
+  <li><code>.enumerate()</code> 给每个元素配一个下标，游标的元素变成 <code>(usize, &amp;u8)</code>；</li>
+  <li><code>.rev()</code> 反向走；<code>for (i, &amp;b)</code> 用模式把元组拆开：<code>i</code> 是下标，<code>&amp;b</code> 把 <code>&amp;u8</code> 拆成 <code>u8</code>。</li>
+</ul>
+
+<p>这两条链里的两个主角，就是今天的闭包和迭代器。<b>闭包是能记住环境的函数；迭代器是能一次次产出元素的值。</b> 先把这两个名字记住，下面逐个拆。</p>
+
+<h2>2. 闭包：能记住环境的函数</h2>
+
+<p>先看一个最小例子，不急着背定义：</p>
+
+<pre><code>let n = 3;
+let add_n = |x| x + n;    // |x| ... 就是闭包
+println!("{}", add_n(5)); // 8</code></pre>
+
+<p>它看起来像函数，但多记住了一件事：<b>n</b>。闭包把“函数代码”和“它用到的外部变量”打包成一个值。下面再看 The Book 的正式定义。</p>
+
+<p>The Book 的定义（原文已核实）：</p>
+
+<div class="callout">
+  Rust’s closures are anonymous functions you can save in a variable or pass as arguments to other functions.<br>
+  （Rust 的闭包是可以保存在变量里、或作为参数传给其他函数的匿名函数。）
+</div>
+
+<p>它和普通函数最大的差别：<b>闭包能捕获定义处作用域里的值</b>（capture values from the scope in which they’re defined）。C 里的函数指针只能带代码，不能带环境；闭包相当于“代码 + 一包捕获的数据”，编译器替你生成一个匿名类型来装这包数据。</p>
+
+<pre><code>// 普通函数：参数类型、返回类型都写出来
+fn add_one(x: i32) -&gt; i32 { x + 1 }
+
+// 闭包：类型通常由上下文推断
+let add_one = |x| x + 1;
+let add_one_typed = |x: i32| -&gt; i32 { x + 1 };</code></pre>
+
+<p>即使不捕获任何外部变量，<code>|x| x + 1</code> 这种匿名函数写法也叫闭包；捕获能力是它和普通函数的关键区别，但不是使用前提。你在 vecs2 里写的 <code>|element| element * 2</code> 就是没有捕获的闭包。</p>
+
+<p>闭包怎么捕获，取决于闭包体里怎么用外面的值：</p>
+
+<table>
+  <tr><th>闭包体里怎么用</th><th>捕获方式</th><th>例子</th></tr>
+  <tr>
+    <td>只读</td>
+    <td>不可变借用 <code>&amp;</code></td>
+    <td><code>let f = |x| x + factor;</code></td>
+  </tr>
+  <tr>
+    <td>修改</td>
+    <td>可变借用 <code>&amp;mut</code></td>
+    <td><code>let mut inc = || count += 1;</code></td>
+  </tr>
+  <tr>
+    <td>消耗 / 移出闭包</td>
+    <td>拿走所有权</td>
+    <td><code>let f = move || name;</code></td>
+  </tr>
+</table>
+
+<pre><code>let factor = 2;
+let times = |x| x * factor;   // 不可变借用 factor
+println!("{}", times(3));     // 6
+println!("{factor}");         // factor 还能用
+
+let mut count = 0;
+let mut inc = || count += 1;  // 可变借用 count
+inc();
+inc();
+println!("{count}");          // 2
+
+let name = String::from("wol");
+let consume = move || name;   // move：name 被移进闭包
+// println!("{name}");        // E0382：name 已经不在外面了</code></pre>
+
+<p><code>move</code> 是“强制按值捕获”的开关。线程、异步任务常要求 <code>move</code>，因为闭包可能比当前函数活得更久；这部分等到并发课再展开。</p>
+
+<p>闭包也受借用规则约束。上面 <code>inc</code> 活着的时候，<code>count</code> 被它可变借用；只有 <code>inc</code> 最后一次使用之后，读 <code>count</code> 才不会冲突——这就是第二、三课的 NLL，只是这次借用发生在闭包里。</p>
+
+<p>标准库还按“闭包能做什么”给它们分了三个 trait，今天只认门牌，不要求手写约束：</p>
+
+<table>
+  <tr><th>trait</th><th>能力</th><th>典型场景</th></tr>
+  <tr><td><code>Fn</code></td><td>可多次调用，不修改、不消耗捕获值</td><td><code>map</code> 里的纯计算</td></tr>
+  <tr><td><code>FnMut</code></td><td>可多次调用，可修改捕获值</td><td><code>filter</code> / 排序里的计数器</td></tr>
+  <tr><td><code>FnOnce</code></td><td>只能调用一次，可消耗捕获值</td><td><code>unwrap_or_else</code>、线程的 <code>move</code> 闭包</td></tr>
+</table>
+
+<p>所有闭包都实现 <code>FnOnce</code>；能力是叠加的：只读闭包三个都实现，会修改的只实现 <code>FnMut</code> 和 <code>FnOnce</code>，把捕获值移出去的只实现 <code>FnOnce</code>。迭代器的适配器大多收 <code>FnMut</code>，所以你在 <code>map</code> 里写闭包时不用操心这些名字。</p>
+
+<h2>3. 迭代器：一个 next() 的流水线</h2>
+
+<p>所有迭代器都实现标准库的 <code>Iterator</code> trait，核心只有一个方法：</p>
+
+<pre><code>pub trait Iterator {
+    type Item;
+    fn next(&amp;mut self) -&gt; Option&lt;Self::Item&gt;;
+}</code></pre>
+
+<p><code>next()</code> 每次给你一个元素，包在 <code>Some(元素)</code> 里；给完了返回 <code>None</code>。<code>Option</code> 就是“有 / 没有”的枚举，今天只需认得 <code>Some</code> 和 <code>None</code> 这两个变体，细节在枚举课展开。调用 <code>next()</code> 会改变迭代器的内部状态，所以它要 <code>&amp;mut self</code>。</p>
+
+<h3>3.1 严格说，iter() 返回什么？</h3>
+
+<div class="callout warn">
+  <b>精度：</b><code>iter()</code> 返回的<b>不是数组，也不是单个 <code>&amp;i32</code></b>，而是一个<b>迭代器对象</b>——一个游标。完整说法是：“<code>iter()</code> 返回一个迭代器；这个迭代器每次 <code>next()</code> 产出的元素类型是 <code>&amp;i32</code>”。不要把它误认成数组或单个引用。
+</div>
+
+<p>游标内部通常保存“当前走到哪”和“到哪里停”的状态（具体是指针还是索引由实现决定，概念上就是游标）。每次 <code>next()</code>，它给你当前元素的引用，然后前进一格：</p>
+
+<pre><code>v:       [ 10 ][ 20 ][ 30 ]
+              ^
+it:      { 当前 → v[0], 结束 → 末尾之后 }
+
+next() → Some(&amp;v[0])     // 游标前进到 v[1]
+next() → Some(&amp;v[1])     // 游标前进到 v[2]
+next() → Some(&amp;v[2])     // 游标到达末尾
+next() → None</code></pre>
+
+<p>注意：创建迭代器时，游标停在第一个元素之前；只写 <code>v.iter()</code> 不会给你任何元素。第一次 <code>next()</code>（或 <code>for</code> 循环第一轮）才取到第一个元素的引用，并且游标前进。</p>
+
+<p>类型链（以 <code>Vec&lt;i32&gt;</code> 为例）：</p>
+
+<pre><code>let mut it = v.iter();    // it: 迭代器对象（游标），不是 &amp;i32
+let x = it.next();        // x: Option&lt;&amp;i32&gt;
+let first = x.unwrap();   // first: &amp;i32，指向 v[0] 的数据
+
+// &amp;i32 指向数据，不指向游标；游标的内部指针/索引不暴露。</code></pre>
+
+<p>要手动调用 <code>next()</code>，迭代器变量必须声明为 <code>mut</code>；<code>for</code> 和 <code>collect</code> 会在内部把它变成可变的。<code>iter().next()</code> 可以写在临时值上，但 <code>&amp;iter().next()</code> 是对临时 <code>Option</code> 取地址，不是对数据取地址——别这样写。</p>
+
+<p>C 类比：<code>iter()</code> 像返回一个 <code>struct { const int *p; const int *end; }</code> 游标；<code>next()</code> 像 <code>const int *next(struct iter *it)</code>，走到末尾返回 <code>NULL</code>。Rust 把 <code>NULL</code> 换成了 <code>None</code>，把指针换成了 <code>&amp;i32</code>。<b>数组本身还是 v；游标只是借它走路。</b></p>
+
+<p>C 里数组名传参会退化成指向首元素的指针，所以“数组”和“地址”经常混在一起；Rust 不搞这种隐式退化：<code>Vec&lt;i32&gt;</code> 是拥有型结构体，<code>&amp;[i32]</code> 是“地址 + 长度”的胖指针，<code>std::slice::Iter</code> 是另一个游标结构体。</p>
+
+<p>从一个集合拿到迭代器，有三种常见写法，差别全在<b>所有权</b>：</p>
+
+<table>
+  <tr><th>写法</th><th>产出</th><th>所有权</th><th>集合之后还能用吗</th></tr>
+  <tr><td><code>v.iter()</code></td><td><code>&amp;T</code></td><td>不可变借用</td><td>能</td></tr>
+  <tr><td><code>v.iter_mut()</code></td><td><code>&amp;mut T</code></td><td>可变借用</td><td>借用结束后能</td></tr>
+  <tr><td><code>v.into_iter()</code></td><td><code>T</code></td><td>拿走所有权</td><td>不能（E0382）</td></tr>
+</table>
+
+<p>C 类比：<code>iter()</code> 像传一个只读指针；<code>iter_mut()</code> 像传可写指针；<code>into_iter()</code> 像把整个数组按值交给函数。</p>
+
+<p><code>for</code> 循环背后也是迭代器：<code>for x in &amp;v</code> 走 <code>&amp;T</code>，<code>for x in &amp;mut v</code> 走 <code>&amp;mut T</code>，<code>for x in v</code> 会调用 <code>into_iter()</code> 拿走 v。The Book 的说法是：循环接管迭代器，并在背后把它变成可变的（the loop took ownership of <code>v1_iter</code> and made it mutable behind the scenes）。</p>
+
+<h2>4. 适配器与消费者：流水线什么时候真的跑</h2>
+
+<p>The Book 原文（已核实）：</p>
+
+<div class="callout">
+  Iterators are lazy, meaning they have no effect until you call methods that consume the iterator to use it up.<br>
+  （迭代器是惰性的：在你调用“消费”迭代器的方法把它用完之前，它什么也不做。）
+</div>
+
+<p><b>map 不会在调用它的那一刻执行闭包。</b>它把闭包和“怎么变换”记在迭代器里，等 <code>collect</code> / <code>for</code> / <code>sum</code> 来拉取时才逐个调用。map 的用途是“变换每个元素”，不是单纯遍历；只想遍历做副作用，用 <code>for</code> 或 <code>for_each</code>。</p>
+
+<p>更准确地说：<b>map 本身不跑循环</b>。它把“上一个迭代器 + 闭包”包成一个新的迭代器（适配器）；真正的循环在消费者里——<code>collect</code> / <code>for</code> 反复调用 <code>next()</code>，每次拉取一个元素，<code>Map</code> 的 <code>next()</code> 才调用一次闭包。所以 map 包装的是迭代器，不是闭包；闭包只是它保存的变换函数。闭包被调用的次数由消费者实际拉取的元素数决定，不一定等于原容器长度（前面有 <code>filter</code> / <code>take</code> 时会更少；不消费就是 0 次）。</p>
+
+<pre><code>let v = vec![1, 2, 3];
+let factor = 10;
+
+let it = v.iter().map(|x| {
+    println!("map 正在处理 {x}");
+    x * factor
+});
+println!("map 构造完了，还没有 collect");
+
+let out: Vec&lt;i32&gt; = it.collect();
+println!("collect 完成：{out:?}");</code></pre>
+
+<p>输出顺序会先打印“map 构造完了”，再逐条打印“map 正在处理”，最后才是 collect 完成。这证明 map 只是登记，collect 才是启动器。</p>
+
+<p>流水线上有两类方法，别混：</p>
+
+<table>
+  <tr><th>类别</th><th>方法</th><th>做什么</th><th>什么时候执行</th></tr>
+  <tr><td rowspan="4">适配器（adapter）</td><td><code>map</code></td><td>每个元素变成新值</td><td>懒：只登记，不执行</td></tr>
+  <tr><td><code>filter</code></td><td>按条件保留元素</td><td>懒：只登记，不执行</td></tr>
+  <tr><td><code>enumerate</code></td><td>给每个元素加下标</td><td>懒：只登记，不执行</td></tr>
+  <tr><td><code>rev</code></td><td>反向遍历（需要双端迭代器）</td><td>懒：只登记，不执行</td></tr>
+  <tr><td rowspan="3">消费者（consumer）</td><td><code>collect</code></td><td>收进集合</td><td>执行整条链</td></tr>
+  <tr><td><code>sum</code></td><td>求和</td><td>执行整条链</td></tr>
+  <tr><td><code>for</code> 循环</td><td>逐个取元素</td><td>执行整条链</td></tr>
+</table>
+
+<div class="pipe">
+  <span class="node">v.iter()<small>&amp;i32</small></span>
+  <span class="arrow">→</span>
+  <span class="node">.map(|x| x * 2)<small>i32</small></span>
+  <span class="arrow">→</span>
+  <span class="node">.filter(|x| *x &gt; 3)<small>闭包收到 &amp;i32</small></span>
+  <span class="arrow">→</span>
+  <span class="node">.collect()<small>Vec&lt;i32&gt;</small></span>
+</div>
+
+<pre><code>let v = vec![1, 2, 3, 4];
+let out: Vec&lt;i32&gt; = v.iter()          // &amp;i32
+    .map(|x| x * 2)                  // i32
+    .filter(|x| *x &gt; 3)              // filter 的闭包收到 &amp;i32，要解引用
+    .collect();                       // Vec&lt;i32&gt;
+println!("{out:?}");                  // [4, 6, 8]</code></pre>
+
+<p>两个容易踩的点：</p>
+<ul>
+  <li><code>map</code> 后面不接消费者，什么都不会发生；<code>map</code> 只是把“要做什么”记在迭代器里。</li>
+  <li><code>filter</code> 会把“上一步产出的元素”以引用形式交给闭包。上一步是 <code>i32</code>，闭包参数就是 <code>&amp;i32</code>，所以条件写 <code>*x &gt; 3</code>；上一步是 <code>&amp;i32</code>（比如 <code>v.iter().filter(...)</code>），闭包参数就是 <code>&amp;&amp;i32</code>。</li>
+</ul>
+
+<p><b>collect 的目标类型由上下文决定</b>，不是迭代器、也不是 collect 自己决定的。上面 <code>let out: Vec&lt;i32&gt;</code> 的标注就是上下文；如果只写 <code>let out = ...collect();</code>，编译器不知道你要收成什么，会报 E0283（type annotations needed）。collect 的作用是“消费整条链并把结果装进集合”，不是单纯做类型转换。</p>
+
+<p><code>enumerate().rev()</code> 还有一个细节：<code>rev()</code> 只改顺序，不改下标——<code>[10, 20, 30].iter().enumerate().rev()</code> 依次给你 <code>(2, &amp;30)</code>、<code>(1, &amp;20)</code>、<code>(0, &amp;10)</code>。strings3 里手搓 trim 的右端下标，靠的就是这个“原始下标不重排”。</p>
+
+<p>想逆序遍历，可以写 <code>v.iter().rev().map(|x| x * factor).collect()</code>；<code>rev()</code> 只改遍历顺序，不修改 v 本身。实测 <code>v = [1, 2, 3]</code>、<code>factor = 10</code> 时输出 <code>[30, 20, 10]</code>。<code>v.iter().map(...).rev().collect()</code> 也等价——两种顺序都行，前提是迭代器支持双端遍历（<code>v.iter()</code> 支持）。</p>
+
+<p>The Book 还有一句值得记住（13.4 性能一节，原文已核实）：</p>
+
+<div class="callout">
+  Iterators are one of Rust’s zero-cost abstractions, by which we mean that using the abstraction imposes no additional runtime overhead.<br>
+  （迭代器是 Rust 的“零成本抽象”之一：使用这层抽象不会带来额外的运行时开销。）
+</div>
+
+<p>对固件尤其重要：<code>map</code> / <code>filter</code> / <code>enumerate</code> 只是编译期的描述，通常会被优化成和手写循环差不多的机器码；只有把结果 <code>collect</code> 到 <code>Vec</code> / <code>String</code> 这类拥有型集合，才会涉及分配，而 <code>no_std</code> 固件里没有堆，所以固件里更多用 <code>for</code> 直接消费迭代器，而不是 <code>collect</code>。</p>
+
+<h2>5. 用迭代器重写 first_word（Book 版）</h2>
+
+<p>第三课你写过索引循环版；The Book 4.3 的版本把循环交给迭代器：</p>
+
+<pre><code>fn first_word(s: &amp;str) -&gt; &amp;str {
+    let bytes = s.as_bytes();                    // &amp;[u8]
+
+    for (i, &amp;item) in bytes.iter().enumerate() {
+        // bytes.iter()      → &amp;u8
+        // .enumerate()      → (usize, &amp;u8)
+        // (i, &amp;item) 模式   → i: usize，item: u8
+        if item == b' ' {
+            return &amp;s[0..i];
+        }
+    }
+
+    &amp;s[..]
+}</code></pre>
+
+<p>逐段读：<code>as_bytes()</code> 给出字节切片；<code>iter()</code> 借每个字节；<code>enumerate()</code> 加上原始下标；<code>(i, &amp;item)</code> 把元组拆开，<code>&amp;item</code> 再把 <code>&amp;u8</code> 拆成 <code>u8</code>，所以下一行可以直接和字节字面量 <code>b' '</code> 比较。</p>
+
+<p>和你的索引版结果完全一样：<code>"Hello World"</code> 返回 <code>"Hello"</code>，<code>"Solo"</code> 返回 <code>"Solo"</code>，空串返回空串。区别在读法：索引版手动维护 <code>i</code> 和 <code>bytes.len()</code>；迭代器版把“走到哪、下一个是谁”交给迭代器，代码里只剩“遇到空格就返回”。</p>
+
+<h2>6. WoL 实战预告：把 parse_mac 写成流水线</h2>
+
+<p>你现在的 <code>parse_mac</code> 是手动 push：</p>
+
+<pre><code>fn parse_mac(mac: &amp;str) -&gt; Vec&lt;u8&gt; {
+    let mut bytes = Vec::new();
+    for part in mac.split('-') {
+        bytes.push(u8::from_str_radix(part, 16).unwrap_or(0));
+    }
+    bytes
+}</code></pre>
+
+<p>用今天的两样东西，可以收成一条链：</p>
+
+<pre><code>fn parse_mac(mac: &amp;str) -&gt; Vec&lt;u8&gt; {
+    mac.split('-')                                       // &amp;str
+        .map(|part| u8::from_str_radix(part, 16).unwrap_or(0))  // u8
+        .collect()                                       // Vec&lt;u8&gt;
+}</code></pre>
+
+<p><code>split('-')</code> 产出每一段 <code>&amp;str</code>；<code>map</code> 的闭包把一段变成 <code>u8</code>；<code>collect</code> 按返回类型收成 <code>Vec&lt;u8&gt;</code>。<code>unwrap_or(0)</code> 是骨架版的偷懒写法，正式版要报错——错误处理课再换。</p>
+
+<h2>7. 互动练习</h2>
+
+<p>四段代码，判断每段是<b>编译错误</b>还是<b>正常运行</b>。全部答完看总分。</p>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <div class="quiz-code">let v = vec![1, 2, 3];
+let total: i32 = v.iter().sum();
+println!("{v:?} {total}");</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">let v = vec![1, 2, 3];
+let total: i32 = v.into_iter().sum();
+println!("{v:?} {total}");</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <div class="quiz-code">let mut count = 0;
+let mut inc = || count += 1;
+inc();
+inc();
+println!("{count}");</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">let name = String::from("wol");
+let consume = move || name;
+println!("{name}");</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 4</p>
+
+<h2>8. 课后任务（按 checkpoint 交）</h2>
+
+<p>三项任务有依赖，按顺序做，一次交一项；没有代码和运行输出，不算完成。</p>
+
+<table>
+  <tr><th>checkpoint</th><th>对应课节</th><th>交付物</th><th>验收证据</th></tr>
+  <tr>
+    <td><b>CP1</b></td>
+    <td>第 2–4 节 + The Book 13.1/13.2</td>
+    <td>三条编号笔记：<br>
+      ① 闭包捕获环境的三种方式，<code>move</code> 强制哪一种？<br>
+      ② <code>iter()</code> / <code>iter_mut()</code> / <code>into_iter()</code> 的产出与所有权；<code>for x in v</code> 会移动吗？<br>
+      ③ <code>map</code> 后不 <code>collect</code> 为什么什么也不发生？</td>
+    <td>能用自己的话回答，不照抄课程原句</td>
+  </tr>
+  <tr>
+    <td><b>CP2</b></td>
+    <td>第 5 节（Book first_word）</td>
+    <td>在 WoL 里把 <code>first_word</code> 改成 <code>bytes.iter().enumerate()</code> 版；在 <code>main</code> 里打印四个输入：<code>"Hello World"</code>、<code>"Solo"</code>、<code>""</code>、<code>"&nbsp;&nbsp;&nbsp;"</code>（三个空格）；再用一句话对比索引版。</td>
+    <td>代码 + <code>cargo run</code> 输出（四个结果分别是 "Hello" / "Solo" / "" / ""，最后一个是空行）</td>
+  </tr>
+  <tr>
+    <td><b>CP3</b></td>
+    <td>第 6 节 + vecs2 的 map/collect</td>
+    <td>把 <code>parse_mac</code> 改成 <code>split('-').map(...).collect()</code> 流水线；每段代码旁标注类型（<code>&amp;str</code> → <code>u8</code> → <code>Vec&lt;u8&gt;</code>）。可选加餐：把 <code>print_hex</code> 的索引循环改成 <code>packet.iter().enumerate()</code>。</td>
+    <td>代码 + <code>cargo run</code> 输出与重构前一致</td>
+  </tr>
+</table>
+
+<p>加餐（不占 checkpoint）：把 strings3 的 <code>trim_me</code> 改成 <code>input.trim()</code>，并解释为什么它返回 <code>&amp;str</code> 而不是 <code>String</code>；空串 <code>""</code> 和全空白 <code>"&nbsp;&nbsp;&nbsp;"</code>（三个空格）都不再 panic。下一课我们会拿你原来那版手搓 trim 当迭代器与边界测试的反例。</p>
+
+<h2>9. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议按顺序读）：<br>
+<a href="https://doc.rust-lang.org/book/ch13-01-closures.html" target="_blank">The Rust Book, Chapter 13.1: Closures</a><br>
+<a href="https://doc.rust-lang.org/book/ch13-02-iterators.html" target="_blank">The Rust Book, Chapter 13.2: Iterators</a><br>
+<a href="https://doc.rust-lang.org/book/ch13-04-performance.html" target="_blank">The Rust Book, Chapter 13.4: Performance</a></p>
+
+<p><b>下一课预告</b>：《const 与编译期常量》——你在第一课就排上的语言机制课；闭包的 <code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code> 细节，会在 trait 与泛型课里再展开。</p>
+
+<p><b>随时提问</b>：哪条链读不懂、哪个报错想拆开、想把某个闭包改成手写循环对照——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0003-slices-and-ranges.html">第三课：切片与区间</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构同前三课：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice="ok" 表示该选项是"正常运行"，
+   data-choice="err" 表示"编译错误"。
+   ============================================================ */
+
+var QUIZ_ANSWERS = [
+  {
+    correct: "ok",
+    okMsg: "对。iter() 返回游标，游标借元素（&i32）；sum 用完后 v 仍然可用；total 是 i32，输出 [1, 2, 3] 6。",
+    errMsg: "不对。iter() 返回游标，只借元素，不拿走 v；sum 之后 println 还能用 v。会移动的是 into_iter()。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。into_iter() 拿走 v 的所有权，sum 之后 v 已被移动，再打印就是 E0382（borrow of moved value）。",
+    errMsg: "不对。into_iter() 按值消费集合；v 在 sum 时已被移走，后面的 println 用不了。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。闭包 inc 可变借用 count；最后一次调用 inc 之后借用结束，NLL 放行 println，输出 2。",
+    errMsg: "不对。count 被 inc 可变借用，但 inc 最后一次使用在第二个 inc()；之后 println 读 count 不再冲突，能编译并输出 2。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。move 让闭包按值捕获 name（String 不是 Copy），闭包创建后 name 已失效；再打印就是 E0382。",
+    errMsg: "不对。move 闭包会拿走 name 的所有权，不是借用；原变量之后不能再使用，报 E0382。"
+  }
+];
+
+var answered = { 0: false, 1: false, 2: false, 3: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }   // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 4";
+
+      if (score === 4) {
+        document.getElementById("score").textContent =
+          "本轮得分：4 / 4 —— 全对。闭包与迭代器这关你过了，下一课见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>

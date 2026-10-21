@@ -6,7 +6,7 @@
 //!
 //! 第二课《借用与引用》的课后任务在本文件完成（String → &str 重构），
 //! 任务书与预期报错见同目录 README.md；第三课的 first_word 练习也在此实现。
-//! 本文件是完成态。
+//! 第四课的迭代器重构（parse_mac / print_hex）也在此完成。本文件是完成态。
 
 /// 构造 Wake-on-LAN 魔术包：6 字节 0xFF 开头，后面跟 16 遍目标 MAC，共 102 字节。
 /// 参数收 &str：只读借一眼，MAC 的所有权留在调用者手里。
@@ -29,23 +29,27 @@ fn build_magic_packet(mac: &str) -> Vec<u8> {
 /// 注意：这个函数的参数本来就是 &str——只读看一眼，不收所有权。
 /// build_magic_packet 改成 &str 之后，和它就是同一个风格。
 fn parse_mac(mac: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
+    // let mut bytes = Vec::new();
 
-    for part in mac.split('-') {
-        // u8::from_str_radix(字符串, 16)：按十六进制解析，"FF" 得到 255；
-        // unwrap_or(0)：解析失败时给 0 而不是 panic（骨架图省事，正式版要报错）
-        bytes.push(u8::from_str_radix(part, 16).unwrap_or(0));
-    }
+    // for part in mac.split('-') {
+    //     // u8::from_str_radix(字符串, 16)：按十六进制解析，"FF" 得到 255；
+    //     // unwrap_or(0)：解析失败时给 0 而不是 panic（骨架图省事，正式版要报错）
+    //     bytes.push(u8::from_str_radix(part, 16).unwrap_or(0));
+    // }
 
-    bytes
+    // bytes
+
+    mac.split('-')
+        .map(|part| u8::from_str_radix(part, 16).unwrap_or(0))
+        .collect()
 }
 
 /// 按十六进制打印字节数组，每行 16 个。
 /// 参数 &[u8] 是"字节切片的引用"——切片是第三课的主角，现在认得即可。
 fn print_hex(packet: &[u8]) {
-    for i in 0..packet.len() {
+    for (i, &item) in packet.iter().enumerate() {
         // {:02X} 是格式语法：至少两位、不足补 0、大写十六进制（类似 C 的 %02X）
-        print!("{:02X} ", packet[i]);
+        print!("{:02X} ", item);
         if i % 16 == 15 {
             println!();
         }
@@ -57,11 +61,13 @@ fn print_hex(packet: &[u8]) {
 /// 参数与返回值都是 &str：只借用、不复制。
 fn first_word(s: &str) -> &str {
     let bytes = s.as_bytes();
-    for i in 0..bytes.len() {
-        if bytes[i] == b' ' {   // 如果检测到空格
+    for (i, &item) in bytes.iter().enumerate() {
+        if item == b' ' {
+            // 如果检测到空格
             return &s[0..i];
         }
     }
+
     &s[..]
 }
 
@@ -76,14 +82,15 @@ fn main() {
 
     print_hex(&packet);
 
-
     let mut s = String::from("Hello World");
     let word = first_word(&s);
-    println!("第一个单词：{word}");   // word 最后一次使用在这里
-    s.clear();                        // 编译通过：借用已结束，&mut s 不再冲突
+    println!("第一个单词：{word}"); // word 最后一次使用在这里
+    s.clear(); // 编译通过：借用已结束，&mut s 不再冲突
 
     // 无空格分支
     println!("无空格：{}", first_word("Solo"));
+    println!("3：{}", first_word(""));
+    println!("4：{}", first_word("   "));
 
     // 反例（取消注释会报 E0502：不可变借用与 &mut 重叠）：
     // let t = String::from("Hello World");

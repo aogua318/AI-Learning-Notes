@@ -138,6 +138,13 @@ s.clear();                        // 编译通过：不可变借用已结束
 
 把 `println!` 挪到 `s.clear()` 之后就会得到 `error[E0502]`（不可变借用与 `&mut` 重叠）；反例以注释保留在 `main.rs` 末尾。完整任务见 [lessons/0003-slices-and-ranges.html](../../lessons/0003-slices-and-ranges.html)。
 
+## 第四课练习：迭代器重构（已完成）
+
+- `first_word` 改为 `bytes.iter().enumerate()` 版，`main` 打印四个边界输入（含空串和三个空格）。
+- `parse_mac` 改为 `split('-').map(...).collect()` 流水线：`&str` → `u8` → `Vec<u8>`。
+- `print_hex` 改为 `packet.iter().enumerate()`。
+- `cargo run` 输出与重构前一致，102 字节魔术包不变；四个 first_word 结果为空串时输出空行。
+
 ## 下一步（项目路线）
 
 1. MAC 地址从命令行参数读入（`std::env::args()`，顺带练 `Option`）；

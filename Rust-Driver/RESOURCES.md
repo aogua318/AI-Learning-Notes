@@ -6,6 +6,8 @@
 
 - [The Rust Programming Language（官方 Book）](https://doc.rust-lang.org/book/) ✅
   第 4 章 What Is Ownership 是所有权三规则的原始出处，措辞已核实。用途：语言预备期的第一教材，遇到概念先回这里查原文。
+- [The Rust Book 13.1 Closures](https://doc.rust-lang.org/book/ch13-01-closures.html) / [13.2 Iterators](https://doc.rust-lang.org/book/ch13-02-iterators.html) / [13.4 Performance](https://doc.rust-lang.org/book/ch13-04-performance.html) ✅
+  闭包捕获与 Fn traits、Iterator/next、iter/into_iter、适配器/消费者、零成本抽象的原文出处。用途：第四课主教材；first_word 迭代器版在 4.3。
 - [Rustlings（rust-lang 官方练习，MIT）](https://github.com/rust-lang/rustlings) ✅
   小型练习集，编译错误即反馈。用途：与 The Book 同步刷，move_semantics 系列练习是第一课的直接配套。
 - [rp2040-hal API 文档（docs.rs）](https://docs.rs/rp2040-hal/latest/rp2040_hal/) ✅
