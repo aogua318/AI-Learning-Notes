@@ -8,23 +8,33 @@
 //! 任务书与预期报错见同目录 README.md；第三课的 first_word 练习也在此实现。
 //! 第四课的迭代器重构（parse_mac / print_hex）也在此完成。本文件是完成态。
 
+const MAGIC_LEN: usize = 6;
+const MAC_LEN: usize = 6;
+const REPEAT: usize = 16;
+const PACKET_LEN: usize = MAGIC_LEN + MAC_LEN * REPEAT;
+const _: () = assert!(PACKET_LEN == 102);
+
 /// 构造 Wake-on-LAN 魔术包：6 字节 0xFF 开头，后面跟 16 遍目标 MAC，共 102 字节。
 /// 参数收 &str：只读借一眼，MAC 的所有权留在调用者手里。
-fn build_magic_packet(mac: &str) -> Vec<u8> {
+fn build_magic_packet(mac: &str) -> [u8; PACKET_LEN] {
     // vec![0xFF; 6] 是宏调用：造一个含 6 个 0xFF 的 Vec<u8>。
     // 原始写法：let mut packet = Vec::new(); for _ in 0..6 { packet.push(0xFF); }
-    let mut packet = vec![0xFF; 6];
-
-    // MAC 重复 16 遍，凑够网卡识别的魔术包格式
-    for _ in 0..16 {
-        for byte in parse_mac(mac) {
-            packet.push(byte);
-        }
+    let mac_bytes = parse_mac(mac);
+    let mut packet = [0u8; PACKET_LEN];
+    // for i in 0..MAGIC_LEN {
+    //     packet[i]=0xFFu8;
+    // }
+    for b in &mut packet[..MAGIC_LEN]{
+        *b = 0xFFu8;
     }
-
+    for i in 0..REPEAT {
+    let start = MAGIC_LEN + i * MAC_LEN;
+    for j in 0..MAC_LEN {
+        packet[start + j] = mac_bytes[j];
+    }
+}
     packet
 }
-
 /// 把 "AA-BB-CC-DD-EE-FF" 解析成 6 个字节。
 /// 注意：这个函数的参数本来就是 &str——只读看一眼，不收所有权。
 /// build_magic_packet 改成 &str 之后，和它就是同一个风格。

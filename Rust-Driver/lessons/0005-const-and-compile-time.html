@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第五课：const 与编译期常量 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0005</span>
+  <span>预计 15–20 分钟</span>
+  <span>前置：第四课 + CP1–CP3 完成</span>
+  <span>阶段：语言预备期（第 5 课）</span>
+</div>
+
+<h1>第五课：const 与编译期常量——让编译器先算，让固件省内存</h1>
+
+<div class="callout teacher">
+  <b>第四课验收通过：</b>CP1–CP3 都完成了——闭包与迭代器的类型链、first_word 迭代器版、parse_mac 流水线，代码与运行输出都对。第一课留下的开放问题“<code>const</code> 到底特殊在哪”，今天收口。<br>
+  开场先声明归属：<b><code>const</code> 是编译期求值；<code>static</code> 是运行期存在、但初始化在编译期；<code>let</code> 是运行期绑定。</b>今天的目标很具体：看到一行声明，能说出它在编译期发生了什么、运行期有没有存储和地址、能不能出现在类型里。
+</div>
+
+<p class="meta">本课示例均用 rustc 1.99.1（edition 2021）实测；英文原文后附中文对照。</p>
+
+<h2>1. 三种声明，三种归属</h2>
+
+<p>先看一个最小例子，不急着背定义：</p>
+
+<pre><code>fn main() {
+    let n = 4;                     // 运行期绑定：语义上有一个变量
+    const MAX: usize = 4;          // 编译期常量：使用处直接内联 4
+    static GREETING: &amp;str = "wol"; // 静态项：程序里恰好一份，有固定地址
+    println!("{n} {MAX} {GREETING}");
+}</code></pre>
+
+<p><code>let n</code> 也可能被优化器折叠成 4，但那是优化，不是语言保证；<code>const</code> 的编译期求值是语言保证。这三者的差别可以压成一张表：</p>
+
+<table>
+  <tr>
+    <th>声明</th>
+    <th>求值 / 存在时机</th>
+    <th>存储与地址</th>
+    <th>能否用于数组长度 <code>[u8; N]</code></th>
+    <th>典型用途</th>
+  </tr>
+  <tr>
+    <td><code>let n</code></td>
+    <td>运行期绑定（优化器可折叠，但无语言保证）</td>
+    <td>语义上有栈上的位置</td>
+    <td>不能，报 E0435</td>
+    <td>局部状态、循环变量</td>
+  </tr>
+  <tr>
+    <td><code>const N</code></td>
+    <td>编译期求值</td>
+    <td>不保证固定地址；使用处内联/复制</td>
+    <td>能</td>
+    <td>尺寸、协议长度、引脚号、寄存器地址</td>
+  </tr>
+  <tr>
+    <td><code>static N</code></td>
+    <td>初始化器在编译期求值；项本身运行期存在</td>
+    <td>固定地址、恰好一份</td>
+    <td>能（不可变且初始化器为常量时）</td>
+    <td>大查找表、需要地址、内部可变性</td>
+  </tr>
+</table>
+
+<div class="callout warn">
+  <b>精度：</b>实测 <code>static N: usize = 4; let buf = [0u8; N];</code> 能编译。也就是说，<b><code>const</code> 与 <code>static</code> 都能出现在常量上下文里</b>。它们的分界不是“能不能编译期用”，而是<b>地址与份数</b>：<code>const</code> 不保证固定地址、使用处可能被复制；<code>static</code> 保证程序里一份、所有引用同址。这个区别在固件里就是“立即数/内联”与“占一块内存”的区别。
+</div>
+
+<h3>1.1 C 锚点：Rust 的 const 更像 #define / constexpr</h3>
+
+<table>
+  <tr><th>C 写法</th><th>Rust 对应</th><th>关键差别</th></tr>
+  <tr>
+    <td><code>#define MAX 4</code></td>
+    <td><code>const MAX: usize = 4;</code></td>
+    <td>Rust 的 const 有类型、有作用域，不是文本替换</td>
+  </tr>
+  <tr>
+    <td><code>static const int TABLE[] = ...;</code></td>
+    <td><code>static TABLE: [u8; N] = ...;</code></td>
+    <td>都有固定地址、一份；Rust static 的初始化器必须能在编译期算</td>
+  </tr>
+  <tr>
+    <td><code>const int max = 4;</code></td>
+    <td>没有直接对应</td>
+    <td>C 的 const 是只读对象，通常仍有存储；Rust const 是编译期值，不保证地址</td>
+  </tr>
+</table>
+
+<p>所以你在 Rust 里写 <code>const</code>，先想 C 的 <code>#define</code> 或 C++ 的 <code>constexpr</code>；写 <code>static</code>，先想 C 里那个有地址的全局对象。<b>不要把 C 的 <code>const int</code> 直觉直接搬到 Rust 的 <code>const</code> 上。</b></p>
+
+<h2>2. const：编译期值，使用处内联</h2>
+
+<p><code>const</code> 的规则不多，但每条都硬：</p>
+
+<ul>
+  <li><b>必须写类型</b>：<code>const N = 4;</code> 报 <code>missing type for `const` item</code>（缺少 const 项的类型）；</li>
+  <li><b>永远不可变</b>：不能用 <code>mut</code>；</li>
+  <li><b>初始化器必须是常量表达式</b>：字面量、算术、其他 const、<code>const fn</code> 调用；不能是运行期函数调用、堆分配、运行时局部变量；</li>
+  <li><b>可以写在任何作用域</b>，包括函数体内；命名约定全大写加下划线。</li>
+</ul>
+
+<pre><code>const THREE_HOURS_IN_SECONDS: u32 = 60 * 60 * 3; // 编译期算成 10800
+const PACKET_LEN: usize = 6 + 16 * 6;           // WoL 魔术包：102 字节
+
+fn main() {
+    const MAX: usize = 4;        // 局部 const 也合法，作用域只在 main 里
+    let buf = [0u8; MAX];        // 数组长度是类型的一部分：buf: [u8; 4]
+    println!("{} {PACKET_LEN}", buf.len());
+}</code></pre>
+
+<p>The Book 对 const 的硬规则（原文已核实）：</p>
+
+<div class="callout">
+  “Constants are always immutable... the type of the value must be annotated... Constants may only be set to a constant expression, not to a value computed at runtime.”<br>
+  （常量永远不可变……必须标注类型……只能赋值为常量表达式，不能赋值为运行期才计算出的值。）
+</div>
+
+<p>const 的值会在使用处内联。Rust Reference 的原话（已核实）：</p>
+
+<div class="callout">
+  “Constants are essentially inlined wherever they are used, meaning that they are copied directly into the relevant context when used.”<br>
+  （常量在使用处基本会被内联，也就是使用时直接复制进相关上下文。）<br><br>
+  “References to the same constant are not necessarily guaranteed to refer to the same memory address.”<br>
+  （对同一个常量的引用，不保证指向同一个内存地址。）
+</div>
+
+<p>所以别把 <code>const</code> 当成“只有一份的全局变量”。要固定地址，用 <code>static</code>。这也是为什么大查找表通常用 <code>static</code>：<code>const</code> 在多个使用点可能各复制一份，<code>static</code> 保证只有一份。</p>
+
+<h3>2.1 为什么 let 不能当数组长度</h3>
+
+<pre><code>let n = 4;
+let buf = [0u8; n]; // E0435</code></pre>
+
+<p>编译器原文与翻译：</p>
+
+<div class="callout warn">
+  <code>error[E0435]: attempt to use a non-constant value in a constant</code><br>
+  （错误[E0435]：尝试在常量中使用非恒定值）<br>
+  <code>help: consider using `const` instead of `let`</code><br>
+  （帮助：考虑用 const 代替 let）
+</div>
+
+<p>关键不在“编译器不知道 n 等于 4”，而在<b>数组长度是类型的一部分</b>：<code>[u8; 4]</code> 和 <code>[u8; 5]</code> 是两个不同的类型。类型必须在编译期完全确定，所以长度必须是常量表达式。<code>let n</code> 是运行期绑定；哪怕优化器知道它是 4，类型检查器也不接受。</p>
+
+<p><b><code>const</code> 正好是“值层面的编译期保证”和“类型层面的定长需求”之间的桥。</b> 这也是 Rust 没有 C99 那种变长数组（VLA）的原因之一：数组长度要么是编译期常量，要么改用 <code>Vec</code> / 切片。</p>
+
+<h2>3. static：有地址的那一份</h2>
+
+<p><code>static</code> 是程序运行期间一直存在的一块固定分配。规则如下：</p>
+
+<ul>
+  <li>初始化器在编译期求值；</li>
+  <li>整个程序只有一份，所有引用和裸指针都指向同一块分配；</li>
+  <li>生命周期是整个程序；程序结束时不会调用 <code>Drop</code>；</li>
+  <li>不可变 <code>static</code> 可能被放进只读内存；可变 <code>static</code> 的读写需要 <code>unsafe</code>。</li>
+</ul>
+
+<pre><code>static MAGIC: [u8; 6] = [0xFF; 6];
+
+fn main() {
+    let a = &amp;MAGIC;
+    let b = &amp;MAGIC;
+    println!("{}", std::ptr::eq(a, b)); // true：同一个分配
+}</code></pre>
+
+<p>Rust Reference 的保证（已核实）：</p>
+
+<div class="callout">
+  “All references and raw pointers to the static refer to the same allocation.”<br>
+  （对这个 static 的所有引用和裸指针都指向同一块分配。）
+</div>
+
+<p><code>std::ptr::eq</code> 比较两个引用的地址；static 保证同一个分配，所以这里一定是 <code>true</code>。const 没有这个保证。</p>
+
+<h3>3.1 static mut：需要 unsafe 的全局可写状态</h3>
+
+<pre><code>static mut COUNT: u32 = 0;
+
+fn main() {
+    // COUNT += 1; // E0133：读写 static mut 都需要 unsafe
+    unsafe {
+        COUNT += 1;
+        let value = COUNT; // 复制出 u32，避免对 static 取引用
+        println!("{value}");
+    }
+}</code></pre>
+
+<p>编译器原文与翻译：</p>
+
+<div class="callout warn">
+  <code>error[E0133]: use of mutable static is unsafe and requires unsafe function or block</code><br>
+  （错误[E0133]：使用可变 static 是不安全的，需要 unsafe 函数或块）<br><br>
+  <code>mutable statics can be mutated by multiple threads: aliasing violations or data races will cause undefined behavior</code><br>
+  （可变 static 可能被多个线程修改：别名违规或数据竞争会导致未定义行为。）
+</div>
+
+<p>Rust Reference 的原话（已核实）：</p>
+
+<div class="callout">
+  “For this reason, an `unsafe` block is required when either reading or writing a mutable static variable.”<br>
+  （因此，读取或写入可变 static 都需要 unsafe 块。）
+</div>
+
+<p><code>unsafe</code> 不是“关掉检查”，而是“这段的安全性由你担保”。<code>static mut</code> 是全局可写状态，编译器无法证明没有别的线程或中断同时访问；数据竞争是未定义行为（undefined behavior，UB）。固件里遇到全局状态，优先考虑原子类型（<code>AtomicU32</code> 等）、临界区（critical section），或把状态收进一个所有者；不要一上来就 <code>static mut</code>。这些细节在并发与固件课展开，今天只要知道“它为什么危险”即可。</p>
+
+<p>什么时候该用 <code>static</code>？Rust Reference 给了一个判断标准（已核实）：</p>
+
+<div class="callout">
+  “Constants should, in general, be preferred over statics unless one of the following are true: Large amounts of data are being stored. The single-address property of statics is required. Interior mutability is required.”<br>
+  （一般应优先用常量而不是静态项，除非满足以下之一：要存大量数据；需要 static 的唯一地址性质；需要内部可变性。）
+</div>
+
+<p>翻译成固件语言：小常量用 <code>const</code>；大查找表、需要固定地址的缓冲区用 <code>static</code>；需要运行期修改的全局状态，先想原子类型或临界区，而不是 <code>static mut</code>。</p>
+
+<h2>4. const fn 与编译期检查</h2>
+
+<p><code>const fn</code> 是可以在编译期调用的函数。它也能在运行期调用；区别是它允许出现在常量上下文里。</p>
+
+<pre><code>const fn packet_len() -&gt; usize {
+    6 + 16 * 6
+}
+
+const PACKET_LEN: usize = packet_len(); // 编译期调用
+
+fn main() {
+    let buf = [0u8; packet_len()]; // 数组长度也能用 const fn
+    let runtime_len = packet_len(); // 运行期调用同一个函数，也合法
+    println!("{PACKET_LEN} {runtime_len} {}", buf.len()); // 102 102 102
+}</code></pre>
+
+<p><code>const fn</code> 里不能堆分配、不能调用非 const 函数、不能 <code>async</code>；<code>if</code>、<code>loop</code>、<code>while</code> 都可以。它不是“只能在编译期跑”，而是“可以在编译期跑”。如果初始化器里调用了普通函数，会报 E0015：</p>
+
+<div class="callout warn">
+  <code>error[E0015]: cannot call non-const function `len` in constants</code><br>
+  （错误[E0015]：不能在常量中调用非 const 函数 `len`）
+</div>
+
+<h3>4.1 const 上下文里的错误是编译错误</h3>
+
+<pre><code>const N: usize = 4;
+const BUF: [u8; N] = [0; N];
+const FIRST: u8 = BUF[5]; // E0080：编译期就发现越界</code></pre>
+
+<div class="callout warn">
+  <code>error[E0080]: index out of bounds: the length is 4 but the index is 5</code><br>
+  （错误[E0080]：索引越界：长度为 4，但索引是 5）
+</div>
+
+<p>在普通运行期代码里，同样的索引会 panic；在 const 上下文里，编译器直接拒绝编译。溢出、断言失败、越界都属于 E0080 这一类。这是好事：错误在烧录前就被抓住。</p>
+
+<h3>4.2 编译期断言：给协议长度上护栏</h3>
+
+<pre><code>const PACKET_LEN: usize = 6 + 16 * 6;
+const _: () = assert!(PACKET_LEN == 102); // 不成立就 E0080</code></pre>
+
+<p><code>const _</code> 是匿名的常量项，只为了在编译期执行一个检查；<code>assert!</code> 在 const 上下文里可用。把 102 改成 101，<code>cargo check</code> 会直接报：</p>
+
+<div class="callout warn">
+  <code>error[E0080]: evaluation panicked: assertion failed: PACKET_LEN == 101</code><br>
+  （错误[E0080]：常量求值 panic：断言失败：PACKET_LEN == 101）
+</div>
+
+<p>这就是固件里的“编译期护栏”：协议长度、缓冲区大小、寄存器位宽，写错就编译不过，不会等到上电才发现。</p>
+
+<p>把今天见过的错误编号收成一张表，方便以后对照：</p>
+
+<table>
+  <tr><th>错误编号</th><th>触发场景</th><th>一句话</th></tr>
+  <tr><td><code>E0435</code></td><td><code>let n = 4; [0u8; n]</code></td><td>数组长度用了运行期值</td></tr>
+  <tr><td><code>E0015</code></td><td><code>const N: usize = runtime_fn();</code></td><td>常量里调用了非 const 函数</td></tr>
+  <tr><td><code>E0080</code></td><td>const 求值越界 / 溢出 / 断言失败</td><td>编译期就发现常量算不出来</td></tr>
+  <tr><td><code>E0133</code></td><td>直接读写 <code>static mut</code></td><td>可变静态项需要 unsafe</td></tr>
+</table>
+
+<h2>5. 固件视角：为什么这课对摇杆重要</h2>
+
+<p>把今天的规则放回摇杆和网络检测盒：</p>
+
+<ul>
+  <li><b>固定缓冲</b>：<code>const PACKET_LEN: usize = 102; let buf = [0u8; PACKET_LEN];</code>——<code>no_std</code> 固件没有堆，包长必须在编译期定死，数组直接放在栈或静态区。</li>
+  <li><b>寄存器 / 引脚常量</b>：<code>const PIN: u8 = 15;</code>、<code>const FLASH_BASE: usize = 0x1000_0000;</code>——让地址有名字、有类型，编译器还能做常量折叠。</li>
+  <li><b>大表</b>：字模、键位映射、USB 描述符这类大数组，用 <code>static</code> 保证只有一份、地址固定；用 <code>const</code> 可能在多个使用点各复制一份。</li>
+  <li><b>全局可变状态</b>：<code>static mut</code> 需要 unsafe，中断 / 多任务下容易数据竞争；先用原子类型或临界区，后面并发 / 固件课展开。</li>
+</ul>
+
+<table>
+  <tr><th>需求</th><th>首选</th></tr>
+  <tr><td>数组长度、协议长度、引脚号、寄存器地址</td><td><code>const</code></td></tr>
+  <tr><td>大查找表、需要固定地址、FFI 共享</td><td><code>static</code></td></tr>
+  <tr><td>运行期可改的全局状态</td><td>原子类型 / 临界区 / 所有者持有，避免 <code>static mut</code></td></tr>
+</table>
+
+<p>内存归属一句话：小 <code>const</code> 更像“把值写进指令或立即数”，<code>static</code> 更像“在内存里占一块地”。固件里 Flash 和 RAM 是两本账，链接脚本决定 <code>static</code> 落在哪；只读 <code>static</code> 可能进 Flash 的只读段，可变 <code>static</code> 通常在 RAM。</p>
+
+<h2>6. 互动练习</h2>
+
+<p>四段代码，判断每段是<b>编译错误</b>还是<b>正常运行</b>。全部答完看总分。</p>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <div class="quiz-code">const MAX: usize = 4;
+
+fn main() {
+    let buf = [0u8; MAX];
+    println!("{}", buf.len());
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">fn main() {
+    let n = 4;
+    let buf = [0u8; n];
+    println!("{}", buf.len());
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <div class="quiz-code">const fn sum_to(n: u32) -&gt; u32 {
+    let mut total = 0;
+    let mut i = 0;
+    while i &lt;= n {
+        total += i;
+        i += 1;
+    }
+    total
+}
+
+const TOTAL: u32 = sum_to(4);
+
+fn main() {
+    println!("{TOTAL}");
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">static mut COUNT: u32 = 0;
+
+fn main() {
+    COUNT += 1;
+    println!("{COUNT}");
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 4</p>
+
+<h2>7. 课后任务（按 checkpoint 交）</h2>
+
+<p>三项任务有依赖，按顺序做，一次交一项；没有代码和运行输出，不算完成。</p>
+
+<table>
+  <tr><th>checkpoint</th><th>对应课节</th><th>交付物</th><th>验收证据</th></tr>
+  <tr>
+    <td><b>CP1</b></td>
+    <td>第 1–4 节 + The Book 3.1 + Rust Reference</td>
+    <td>三条编号笔记：<br>
+      ① <code>let</code> / <code>const</code> / <code>static</code> 的求值时机、地址与份数、能否用于数组长度；用一句话说清 const 与 static 的分界。<br>
+      ② 为什么 <code>let n = 4; let buf = [0u8; n];</code> 报 E0435，而 <code>const N: usize = 4;</code> 可以；数组长度和类型是什么关系。<br>
+      ③ <code>static mut</code> 为什么需要 unsafe；固件里你会用什么替代（说一个方向即可）。</td>
+    <td>用自己的话，每条 2–4 句；至少附一个最小代码片段</td>
+  </tr>
+  <tr>
+    <td><b>CP2</b></td>
+    <td>第 2、4 节</td>
+    <td>在 <code>demo/wol/src/main.rs</code> 顶部加 const 块：<code>MAGIC_LEN</code> / <code>MAC_LEN</code> / <code>REPEAT</code> / <code>PACKET_LEN</code>，用公式算出 102；再加一条 <code>const _: () = assert!(PACKET_LEN == 102);</code>。先不改现有输出逻辑。</td>
+    <td><code>cargo check</code> 通过；<code>cargo run</code> 仍然打印 102 字节魔术包；贴 const 块与断言代码。可选：把 102 改成 101，贴 E0080 原文并附中文翻译，再改回。</td>
+  </tr>
+  <tr>
+    <td><b>CP3</b></td>
+    <td>第 5 节 + CP2</td>
+    <td>把 <code>build_magic_packet</code> 的返回类型从 <code>Vec&lt;u8&gt;</code> 改成 <code>[u8; PACKET_LEN]</code>，用 <code>parse_mac</code> 的结果填充；<code>print_hex(&amp;packet)</code> 应仍能工作（<code>&amp;[u8; 102]</code> 可以当 <code>&amp;[u8]</code> 用）。</td>
+    <td>代码 + <code>cargo run</code> 输出与重构前一致（102 字节）+ 一句话：为什么固件里更愿意用定长数组而不是 <code>Vec</code>。</td>
+  </tr>
+</table>
+
+<p>加餐（不占 checkpoint）：把 <code>const _</code> 断言里的 102 换成 <code>MAGIC_LEN + MAC_LEN * REPEAT</code>，确认仍通过；再故意把 <code>REPEAT</code> 改成 15，看 E0080 是否按预期失败，然后把值改回 16。</p>
+
+<h2>8. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议按顺序读）：<br>
+<a href="https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html" target="_blank">The Rust Book, Chapter 3.1: Variables and Mutability — Constants</a><br>
+<a href="https://doc.rust-lang.org/reference/items/constant-items.html" target="_blank">The Rust Reference: Constant items</a><br>
+<a href="https://doc.rust-lang.org/reference/items/static-items.html" target="_blank">The Rust Reference: Static items</a><br>
+<a href="https://doc.rust-lang.org/reference/const_eval.html" target="_blank">The Rust Reference: Constant evaluation</a></p>
+
+<p><b>下一课预告</b>：模块与可见性（对齐 rustlings 10_modules）——把代码拆成多个文件，讲 <code>mod</code> / <code>pub</code> / <code>use</code> 的规则。const 泛型与 <code>static mut</code> 的替代方案，留到泛型 / 并发课再展开。</p>
+
+<p><b>随时提问</b>：哪条规则想拆开、哪个报错想复现、想把 <code>const</code> 与 <code>static</code> 的地址差异实测一遍——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0004-closures-and-iterators.html">第四课：闭包与迭代器</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../demo/wol/README.md">WoL 项目</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构同前四课：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice="ok" 表示该选项是"正常运行"，
+   data-choice="err" 表示"编译错误"。
+   ============================================================ */
+
+var QUIZ_ANSWERS = [
+  {
+    correct: "ok",
+    okMsg: "对。const 是编译期常量，数组长度是类型的一部分；[0u8; MAX] 就是 [u8; 4]，输出 4。",
+    errMsg: "不对。const 的值在编译期已知，可以直接当数组长度；这段能编译并输出 4。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。let n 是运行期绑定，数组长度要求编译期常量，报 E0435（attempt to use a non-constant value in a constant）。",
+    errMsg: "不对。let n 不是常量表达式；数组长度是类型的一部分，必须在编译期定下来，这段会报 E0435。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。const fn 可以在编译期执行，while 循环合法；sum_to(4)=0+1+2+3+4=10。",
+    errMsg: "不对。const fn 允许 if/while 等控制流，常量上下文里由编译器执行；这段输出 10。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。static mut 的读写都需要 unsafe；直接写 COUNT += 1 报 E0133（use of mutable static is unsafe）。",
+    errMsg: "不对。static mut 不是普通全局变量；读写它都要 unsafe 块，这段会报 E0133。"
+  }
+];
+
+var answered = { 0: false, 1: false, 2: false, 3: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }   // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 4";
+
+      if (score === 4) {
+        document.getElementById("score").textContent =
+          "本轮得分：4 / 4 —— 全对。const 与编译期常量这关你过了，下一课见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>

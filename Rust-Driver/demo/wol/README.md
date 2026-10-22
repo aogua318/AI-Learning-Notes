@@ -145,6 +145,15 @@ s.clear();                        // 编译通过：不可变借用已结束
 - `print_hex` 改为 `packet.iter().enumerate()`。
 - `cargo run` 输出与重构前一致，102 字节魔术包不变；四个 first_word 结果为空串时输出空行。
 
+## 第五课练习：const 与定长缓冲（已完成）
+
+- 文件顶部新增 `MAGIC_LEN` / `MAC_LEN` / `REPEAT` / `PACKET_LEN`，其中 `PACKET_LEN = 6 + 16 * 6 = 102`；`const _: () = assert!(PACKET_LEN == 102);` 把长度错误变成编译错误 E0080。
+- `build_magic_packet` 返回 `[u8; PACKET_LEN]`：前 6 字节用可变切片填 `0xFF`，再把 MAC 重复 16 遍写入固定数组。
+- `print_hex(&packet)` 不用改：`&[u8; 102]` 可以当 `&[u8]` 用。
+- `cargo check` 无 warning；`cargo run` 输出仍是 102 字节魔术包。
+- 精度：`parse_mac` 仍返回 `Vec<u8>`，这一步只把包体改成定长；完全无分配留到固件课。
+- 完整任务见 [lessons/0005-const-and-compile-time.html](../../lessons/0005-const-and-compile-time.html)。
+
 ## 下一步（项目路线）
 
 1. MAC 地址从命令行参数读入（`std::env::args()`，顺带练 `Option`）；

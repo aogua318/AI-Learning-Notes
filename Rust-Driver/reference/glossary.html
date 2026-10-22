@@ -108,6 +108,18 @@
 </dl>
 
 <dl class="term">
+  <dt>常量（const）</dt>
+  <dd>编译期求值的命名值；必须标注类型、永远不可变，使用处内联/复制。不保证固定地址或份数；可以出现在数组长度等常量上下文里。需要固定地址时用静态项。</dd>
+  <dd class="avoid">避免：常量变量（它不是变量）、C 的 const int（只读对象，通常有存储）</dd>
+</dl>
+
+<dl class="term">
+  <dt>静态项（static）</dt>
+  <dd>程序运行期间一直存在的固定分配，恰好一份、地址固定；初始化器在编译期求值，程序结束不调用 Drop。普通 static 不可变；static mut 的读写需要 unsafe。</dd>
+  <dd class="avoid">避免：全局变量（可变性与安全语义不同）、Java static（类级成员）</dd>
+</dl>
+
+<dl class="term">
   <dt>可变绑定（mutable binding）</dt>
   <dd>用 mut 声明的变量，其值可以被修改；默认绑定不可变。</dd>
   <dd class="avoid">避免：变量（不修饰时一律指不可变绑定）</dd>
@@ -190,7 +202,7 @@
 </dl>
 
 <hr>
-<p class="meta">生命周期（lifetime）/ 常量（const）等词条，待对应课程练习完成后晋升至此。<br>
+<p class="meta">生命周期（lifetime）/ const fn 等词条，待对应课程练习完成后晋升至此。<br>
 术语有争议或想改定义，直接告诉我——这份表的措辞以你用得顺手为准。</p>
 
 </body>
