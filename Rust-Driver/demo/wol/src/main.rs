@@ -24,15 +24,15 @@ fn build_magic_packet(mac: &str) -> [u8; PACKET_LEN] {
     // for i in 0..MAGIC_LEN {
     //     packet[i]=0xFFu8;
     // }
-    for b in &mut packet[..MAGIC_LEN]{
+    for b in &mut packet[..MAGIC_LEN] {
         *b = 0xFFu8;
     }
     for i in 0..REPEAT {
-    let start = MAGIC_LEN + i * MAC_LEN;
-    for j in 0..MAC_LEN {
-        packet[start + j] = mac_bytes[j];
+        let start = MAGIC_LEN + i * MAC_LEN;
+        for j in 0..MAC_LEN {
+            packet[start + j] = mac_bytes[j];
+        }
     }
-}
     packet
 }
 /// 把 "AA-BB-CC-DD-EE-FF" 解析成 6 个字节。

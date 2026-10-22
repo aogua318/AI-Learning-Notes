@@ -12,6 +12,8 @@
   const 的硬规则（永远不可变、必须标类型、只能赋常量表达式）原文出处。用途：第五课主教材。
 - [Rust Reference: Constant items](https://doc.rust-lang.org/reference/items/constant-items.html) / [Static items](https://doc.rust-lang.org/reference/items/static-items.html) / [Constant evaluation](https://doc.rust-lang.org/reference/const_eval.html) ✅
   const 内联与地址不保证、static 固定分配与 static mut 需要 unsafe、const 上下文与 E0080 的规范出处。用途：第五课规则核对与错误编号。
+- [The Rust Book 7.1–7.5: Managing Growing Projects](https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html) ✅
+  模块树、默认私有、crate/self/super 路径、use/as/pub use、文件模块的原文出处。用途：第六课主教材；rustlings 10_modules 配套。
 - [Rustlings（rust-lang 官方练习，MIT）](https://github.com/rust-lang/rustlings) ✅
   小型练习集，编译错误即反馈。用途：与 The Book 同步刷，move_semantics 系列练习是第一课的直接配套。
 - [rp2040-hal API 文档（docs.rs）](https://docs.rs/rp2040-hal/latest/rp2040_hal/) ✅

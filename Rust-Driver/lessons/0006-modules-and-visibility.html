@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第六课：模块与可见性 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0006</span>
+  <span>预计 15–20 分钟</span>
+  <span>前置：第五课 CP1–CP3 完成</span>
+  <span>阶段：语言预备期（第 6 课）</span>
+</div>
+
+<h1>第六课：模块与可见性——给代码划边界</h1>
+
+<div class="callout teacher">
+  <b>第五课已结课：</b>const/static 三轴、编译期断言、102 字节定长魔术包都完成了。今天把 WoL 从“一个文件装下所有函数”拆成有边界的房间。<br>
+  开场先声明归属：<b>模块系统是编译期的命名空间 + 可见性检查；运行期没有模块对象，也没有额外开销。</b> <code>mod</code> 不是 C 的 <code>#include</code>，不会把文件文本复制一遍；它是在模块树里登记一个模块，编译器只加载一次。
+</div>
+
+<p class="meta">本课示例均用 rustc 1.99.1（edition 2021）实测；英文原文与报错附中文对照。</p>
+
+<h2>1. 最小模块：先给函数一个房间</h2>
+
+<pre><code>mod wol {
+    pub fn packet_len() -&gt; usize {
+        102
+    }
+}
+
+fn main() {
+    println!("{}", wol::packet_len());
+}</code></pre>
+
+<p>模块树是长这样的：</p>
+
+<pre><code>crate（src/main.rs）
+└── wol
+    └── packet_len（pub）</code></pre>
+
+<ul>
+  <li><code>mod wol { ... }</code> 定义一个内联模块；<code>src/main.rs</code> 是二进制 crate 的根（crate root）。</li>
+  <li><code>wol::packet_len()</code> 是从 crate 根出发的相对路径；完整写法是 <code>crate::wol::packet_len()</code>。</li>
+  <li><code>packet_len</code> 前面的 <code>pub</code> 让它对父模块可见；去掉 <code>pub</code>，main 就调不到。</li>
+</ul>
+
+<p>去掉 <code>pub</code> 的编译错误（已实测）：</p>
+
+<div class="callout warn">
+  <code>error[E0603]: function `packet_len` is private</code><br>
+  （错误[E0603]：函数 `packet_len` 是私有的）<br>
+  <code>note: the function `packet_len` is defined here</code><br>
+  （注意：函数 `packet_len` 定义在这里）
+</div>
+
+<p>要分清两个开关：<b>模块本身的可见性</b>和<b>模块里项的可见性</b>。路径上的每一层都要放行，才能从外面走到目标项。</p>
+
+<pre><code>mod outer {
+    mod inner {
+        pub fn value() -&gt; i32 { 7 }
+    }
+}
+
+fn main() {
+    // 即使 value 是 pub，inner 仍是私有模块
+    println!("{}", outer::inner::value()); // E0603: module `inner` is private
+}</code></pre>
+
+<div class="callout">
+  <b>规则：</b>默认私有。<b>子模块能看见祖先的项</b>（所以后面有 <code>super::</code>）；<b>祖先不能看见子模块的私有项</b>。把路径中间的模块或目标项标成 <code>pub</code>，才会向上一层放行。
+</div>
+
+<h3>1.1 C 锚点：mod 不是 #include</h3>
+
+<table>
+  <tr><th>C 写法</th><th>Rust 对应</th><th>关键差别</th></tr>
+  <tr>
+    <td><code>#include "foo.h"</code></td>
+    <td>没有直接对应；用 <code>mod foo;</code> 声明模块</td>
+    <td>C 是文本包含；Rust 是语义上的模块声明，只加载一次</td>
+  </tr>
+  <tr>
+    <td>文件作用域的 <code>static</code> 函数</td>
+    <td>默认私有（当前模块及后代可见）</td>
+    <td>Rust 默认不导出，需要 <code>pub</code> 才放行</td>
+  </tr>
+  <tr>
+    <td>头文件里的声明</td>
+    <td><code>pub fn</code> / <code>pub use</code></td>
+    <td>Rust 没有头文件；公开 API 由 <code>pub</code> 和 <code>use</code> 共同塑造</td>
+  </tr>
+</table>
+
+<h2>2. 可见性刻度：从私有到 pub</h2>
+
+<p>除了裸 <code>pub</code>，还有几个常用刻度：</p>
+
+<table>
+  <tr><th>写法</th><th>可见范围</th><th>典型用途</th></tr>
+  <tr><td>无 <code>pub</code></td><td>当前模块及其后代</td><td>内部实现，外部不需要知道</td></tr>
+  <tr><td><code>pub(super)</code></td><td>父模块</td><td>只给上一层用</td></tr>
+  <tr><td><code>pub(crate)</code></td><td>整个 crate</td><td>crate 内部 API，不对外暴露</td></tr>
+  <tr><td><code>pub</code></td><td>外部 crate（路径上每层都要可见）</td><td>真正的公开 API</td></tr>
+</table>
+
+<pre><code>mod outer {
+    pub(crate) mod inner {
+        pub(crate) fn value() -&gt; i32 { 7 }
+    }
+}
+
+fn main() {
+    println!("{}", outer::inner::value()); // 7：crate 内可见
+}</code></pre>
+
+<p><code>pub(crate)</code> 在固件里很有用：板级支持代码、协议打包这类“整个项目内部要用，但不打算给外部库用”的东西，用它比裸 <code>pub</code> 更收敛。</p>
+
+<p><b>结构体和枚举的字段可见性另有规则</b>（例如 <code>pub struct</code> 的字段默认仍是私有的），等结构体/枚举课再展开；今天先把模块和函数的边界打牢。</p>
+
+<h2>3. 路径三兄弟：crate / self / super</h2>
+
+<table>
+  <tr><th>路径</th><th>起点</th><th>例子</th></tr>
+  <tr><td><code>crate::</code></td><td>crate 根（<code>main.rs</code> / <code>lib.rs</code>）</td><td><code>crate::protocol::build_magic_packet</code></td></tr>
+  <tr><td><code>self::</code></td><td>当前模块</td><td><code>self::parse_mac</code></td></tr>
+  <tr><td><code>super::</code></td><td>父模块</td><td><code>super::helper</code></td></tr>
+  <tr><td>标识符开头</td><td>当前模块里的子项 / 同级项</td><td><code>protocol::build_magic_packet</code></td></tr>
+</table>
+
+<p><code>crate::</code> 是绝对路径；<code>self::</code> / <code>super::</code> 是相对路径。C 里没有模块，只有文件作用域和链接属性；Rust 的路径是模块树上的坐标，不依赖文件在哪。</p>
+
+<h3>3.1 use：只是当前作用域的快捷方式</h3>
+
+<pre><code>mod outer {
+    pub mod inner {
+        pub fn value() -&gt; i32 { 7 }
+    }
+}
+
+use outer::inner; // 这个快捷方式只在 crate 根生效
+
+mod consumer {
+    pub fn read() -&gt; i32 {
+        inner::value() // E0433: cannot find module or crate `inner`
+    }
+}
+
+fn main() {
+    println!("{}", consumer::read());
+}</code></pre>
+
+<div class="callout warn">
+  <code>error[E0433]: cannot find module or crate `inner` in this scope</code><br>
+  （错误[E0433]：在当前作用域找不到模块或 crate `inner`）
+</div>
+
+<p><code>use</code> 只把名字引进**它所在的那一层作用域**，不会自动传给子模块。修法有两种：在 <code>consumer</code> 里自己写 <code>use crate::outer::inner;</code>，或者直接用全路径 <code>crate::outer::inner::value()</code>。<code>use</code> 也不改变可见性；它只是改名/建快捷方式，能不能访问仍由 <code>pub</code> 决定。</p>
+
+<h3>3.2 as、嵌套路径与 pub use</h3>
+
+<pre><code>// as：同一个名字冲突时改名
+use std::io::Result as IoResult;
+
+// 嵌套路径：一行引入多个
+use std::time::{SystemTime, UNIX_EPOCH};</code></pre>
+
+<p><code>pub use</code> 是“导入 + 重新导出”：既把名字带进当前作用域，又把它放进当前模块的公开 API。rustlings modules2 就是它：</p>
+
+<pre><code>mod snacks {
+    mod fruits {
+        pub const PEAR: &amp;str = "Pear";
+    }
+
+    pub use self::fruits::PEAR as fruit;
+}
+
+fn main() {
+    println!("{}", snacks::fruit); // Pear
+}</code></pre>
+
+<p>把 <code>pub use</code> 改成普通 <code>use</code>，<code>fruit</code> 就只在 <code>snacks</code> 内部可见，main 再访问 <code>snacks::fruit</code> 就会报私有错误。<b>普通 <code>use</code> 是内部捷径；<code>pub use</code> 是对外门牌。</b></p>
+
+<h2>4. 文件模块：把房间搬到文件里</h2>
+
+<p>WoL 现在是一个 <code>main.rs</code>。把协议相关的东西搬到 <code>src/protocol.rs</code>，目录变成：</p>
+
+<pre><code>src/
+├── main.rs
+└── protocol.rs</code></pre>
+
+<p><code>src/main.rs</code>：</p>
+
+<pre><code>mod protocol;
+
+use protocol::{build_magic_packet, print_hex};
+
+fn main() {
+    let mac = String::from("AA-BB-CC-DD-EE-FF");
+    let packet = build_magic_packet(&amp;mac);
+    print_hex(&amp;packet);
+}</code></pre>
+
+<p><code>src/protocol.rs</code>：</p>
+
+<pre><code>const MAGIC_LEN: usize = 6;
+const MAC_LEN: usize = 6;
+const REPEAT: usize = 16;
+
+pub const PACKET_LEN: usize = MAGIC_LEN + MAC_LEN * REPEAT;
+const _: () = assert!(PACKET_LEN == 102);
+
+fn parse_mac(mac: &amp;str) -&gt; Vec&lt;u8&gt; {
+    mac.split('-')
+        .map(|part| u8::from_str_radix(part, 16).unwrap_or(0))
+        .collect()
+}
+
+pub fn build_magic_packet(mac: &amp;str) -&gt; [u8; PACKET_LEN] {
+    let mac_bytes = parse_mac(mac);
+    let mut packet = [0u8; PACKET_LEN];
+
+    for b in &amp;mut packet[..MAGIC_LEN] {
+        *b = 0xFF;
+    }
+
+    for i in 0..REPEAT {
+        let start = MAGIC_LEN + i * MAC_LEN;
+        for j in 0..MAC_LEN {
+            packet[start + j] = mac_bytes[j];
+        }
+    }
+
+    packet
+}
+
+pub fn print_hex(packet: &amp;[u8]) {
+    for (i, &amp;item) in packet.iter().enumerate() {
+        print!("{:02X} ", item);
+        if i % 16 == 15 { println!(); }
+    }
+    println!();
+}</code></pre>
+
+<p>模块树对应关系：</p>
+
+<pre><code>crate（src/main.rs）
+├── protocol（src/protocol.rs）
+│   ├── PACKET_LEN（常量；外部要用再 pub）
+│   ├── build_magic_packet（pub）
+│   ├── print_hex（pub）
+│   └── parse_mac（私有）
+└── main</code></pre>
+
+<ul>
+  <li><code>mod protocol;</code> 声明模块；编译器去找 <code>src/protocol.rs</code>（旧式写法是 <code>src/protocol/mod.rs</code>，二选一）。</li>
+  <li><b>不要在 <code>protocol.rs</code> 里再写 <code>mod protocol</code></b>；文件本身就是这个模块的内容。</li>
+  <li><code>parse_mac</code> 只在 <code>protocol.rs</code> 内部使用，保持私有即可；<code>build_magic_packet</code> / <code>print_hex</code> 要给 main 用，标 <code>pub</code>。</li>
+  <li><code>PACKET_LEN</code> <b>不必</b>因为出现在公开函数的返回类型里就 <code>pub</code>：签名里的 <code>[u8; PACKET_LEN]</code> 对外就是 <code>[u8; 102]</code>，调用者不需要这个名字。只有外部代码也要用这个常量（比如声明同尺寸缓冲）时，才把它改成 <code>pub</code>。示例里保留 <code>pub</code>，是把它当作“公开的包长”；如果不需要，私有也可以。</li>
+  <li><code>mod</code> 只加载一次，不是文本包含；不会出现 C 头文件那种重复定义。</li>
+</ul>
+
+<p>嵌套模块时，文件路径跟着模块树走：<code>protocol.rs</code> 里写 <code>pub mod packet;</code>，子模块代码放 <code>src/protocol/packet.rs</code>。目录和树对齐，读代码时不用猜。</p>
+
+<h2>5. 固件视角：模块是硬件的边界</h2>
+
+<p>摇杆固件迟早会长成这样：</p>
+
+<table>
+  <tr><th>文件 / 模块</th><th>职责</th><th>对外</th></tr>
+  <tr><td><code>main.rs</code></td><td>初始化、主循环</td><td>不导出</td></tr>
+  <tr><td><code>buttons.rs</code></td><td>按键扫描、消抖</td><td><code>pub fn read()</code></td></tr>
+  <tr><td><code>usb.rs</code></td><td>HID 上报</td><td><code>pub(crate)</code> 内部 API</td></tr>
+  <tr><td><code>packet.rs</code></td><td>协议打包</td><td><code>pub</code> 或 <code>pub(crate)</code> 按需</td></tr>
+</table>
+
+<p>模块边界的好处：</p>
+<ul>
+  <li><b>隐藏实现</b>：<code>parse_mac</code>、寄存器细节、缓冲区布局不必暴露给 main；</li>
+  <li><b>限制耦合</b>：想改内部实现时，只要公开 API 不变，其他模块不受影响；</li>
+  <li><b>零运行期成本</b>：模块只是编译期的命名空间和可见性检查，不会生成“模块对象”；</li>
+  <li><b>读驱动源码的预演</b>：Linux Rust 驱动也是按模块/文件组织，先习惯边界，后面读源码不迷路。</li>
+</ul>
+
+<h2>6. 互动练习</h2>
+
+<p>四段代码，判断每段是<b>编译错误</b>还是<b>正常运行</b>。全部答完看总分。</p>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <div class="quiz-code">mod wol {
+    pub fn packet_len() -&gt; usize {
+        102
+    }
+}
+
+fn main() {
+    println!("{}", wol::packet_len());
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">mod wol {
+    fn packet_len() -&gt; usize {
+        102
+    }
+}
+
+fn main() {
+    println!("{}", wol::packet_len());
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <div class="quiz-code">mod snacks {
+    mod fruits {
+        pub const PEAR: &amp;str = "Pear";
+    }
+
+    pub use self::fruits::PEAR as fruit;
+}
+
+fn main() {
+    println!("{}", snacks::fruit);
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">mod outer {
+    pub mod inner {
+        pub fn value() -&gt; i32 {
+            7
+        }
+    }
+}
+
+use outer::inner;
+
+mod consumer {
+    pub fn read() -&gt; i32 {
+        inner::value()
+    }
+}
+
+fn main() {
+    println!("{}", consumer::read());
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 4</p>
+
+<h2>7. 课后任务（按 checkpoint 交）</h2>
+
+<p>三项任务有依赖，按顺序做，一次交一项；没有代码和运行输出，不算完成。</p>
+
+<table>
+  <tr><th>checkpoint</th><th>对应课节</th><th>交付物</th><th>验收证据</th></tr>
+  <tr>
+    <td><b>CP1</b></td>
+    <td>第 1–4 节 + The Book 7.1–7.5</td>
+    <td>三条编号笔记：<br>
+      ① 画出 <code>main.rs</code> + <code>protocol.rs</code> + <code>protocol/packet.rs</code> 的模块树，标出哪些项需要 <code>pub</code> 才能从 main 访问。<br>
+      ② 解释默认私有：为什么父模块不能调用子模块的私有函数？为什么 <code>pub fn</code> 放在私有模块里，从外面仍然走不到？<code>pub(crate)</code> 改变了什么？<br>
+      ③ 解释 <code>use</code> 的作用域规则和 <code>pub use</code> 的区别；E0433 怎么修。</td>
+    <td>用自己的话，每条 2–4 句；至少附一个最小代码片段</td>
+  </tr>
+  <tr>
+    <td><b>CP2</b></td>
+    <td>第 2–4 节 + rustlings 10_modules</td>
+    <td>完成 rustlings <code>10_modules</code> 的 modules1–3；贴出你写的 <code>use</code> / <code>pub use</code> / <code>pub</code> 代码。</td>
+    <td>三道题通过；<code>rustlings</code> 状态显示 10_modules 完成；附一段你最不确定的路径解释</td>
+  </tr>
+  <tr>
+    <td><b>CP3</b></td>
+    <td>第 4 节 + 第五课 CP3 代码</td>
+    <td>把 WoL 的常量、<code>parse_mac</code>、<code>build_magic_packet</code>、<code>print_hex</code> 移到 <code>src/protocol.rs</code>；<code>main.rs</code> 只留 <code>mod protocol;</code>、<code>use</code>、<code>first_word</code> 和 <code>main</code>。<code>parse_mac</code> 保持私有；<code>build_magic_packet</code> / <code>print_hex</code> 标 <code>pub</code>；<code>PACKET_LEN</code> 按需 <code>pub</code>（外部不需要这个常量就保持私有）。</td>
+    <td>代码 + 模块树 + <code>cargo check</code> / <code>cargo run</code> 输出（仍为 102 字节）+ 一句话：为什么 <code>parse_mac</code> 不需要 <code>pub</code></td>
+  </tr>
+</table>
+
+<p>加餐（不占 checkpoint）：把 <code>protocol.rs</code> 再拆成 <code>src/protocol.rs</code> + <code>src/protocol/packet.rs</code>，在 <code>protocol.rs</code> 里写 <code>pub mod packet;</code>，用 <code>pub use</code> 保持 <code>protocol::build_magic_packet</code> 的路径不变。</p>
+
+<h2>8. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议按顺序读）：<br>
+<a href="https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html" target="_blank">The Rust Book, Chapter 7: Managing Growing Projects</a><br>
+<a href="https://doc.rust-lang.org/book/ch07-02-defining-modules-to-control-scope-and-privacy.html" target="_blank">7.2 Defining Modules to Control Scope and Privacy</a><br>
+<a href="https://doc.rust-lang.org/book/ch07-03-paths-for-referring-to-an-item-in-the-module-tree.html" target="_blank">7.3 Paths for Referring to an Item in the Module Tree</a><br>
+<a href="https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html" target="_blank">7.4 Bringing Paths into Scope with the use Keyword</a><br>
+<a href="https://doc.rust-lang.org/book/ch07-05-separating-modules-into-different-files.html" target="_blank">7.5 Separating Modules into Different Files</a></p>
+
+<p><b>下一课预告</b>：结构体与枚举（rustlings 07/08）——模块边界搭好后，下一课往房间里放数据类型；再往后才是 <code>Option</code> / 错误处理与 trait。</p>
+
+<p><b>随时提问</b>：路径为什么找不到、<code>pub</code> 加在哪一层、文件该放哪个目录——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0005-const-and-compile-time.html">第五课：const 与编译期常量</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../demo/wol/README.md">WoL 项目</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构同前五课：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice="ok" 表示该选项是"正常运行"，
+   data-choice="err" 表示"编译错误"。
+   ============================================================ */
+
+var QUIZ_ANSWERS = [
+  {
+    correct: "ok",
+    okMsg: "对。main 在 crate 根，wol 是根的子模块；packet_len 标了 pub，父模块可以调用，输出 102。",
+    errMsg: "不对。packet_len 是 pub，main 又在父模块（crate 根），能调用；输出 102。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。packet_len 默认私有，父模块也看不到子模块的私有项，报 E0603（function `packet_len` is private）。",
+    errMsg: "不对。packet_len 没有 pub，默认私有；main 在父模块也看不到，报 E0603。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。pub use 把 fruits::PEAR 以 fruit 这个名字重新导出，main 可以通过 snacks::fruit 访问，输出 Pear。",
+    errMsg: "不对。pub use 是带 pub 的重新导出，snacks::fruit 在模块外可见；输出 Pear。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。use 只在所在作用域生效，crate 根的 use 不会传给子模块 consumer；consumer 里报 E0433（cannot find module or crate `inner`）。",
+    errMsg: "不对。use 不会跨模块继承；consumer 里没有 inner 这个名字，报 E0433。"
+  }
+];
+
+var answered = { 0: false, 1: false, 2: false, 3: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }   // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 4";
+
+      if (score === 4) {
+        document.getElementById("score").textContent =
+          "本轮得分：4 / 4 —— 全对。模块与可见性这关你过了，下一课见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>
