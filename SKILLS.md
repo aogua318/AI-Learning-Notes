@@ -29,12 +29,18 @@
 | 用浏览器查资料 / 测试网页 | `agent-browser` 或 `browser-use:control-browser` |
 | 开发 MCP 服务器 | `mcp-server-spec-driven-development` |
 | 交互式可视化讲解某个原理 | `visualize` |
+| 不知道选哪个 skill / 工作流 | `ask-matt`（路由器，仅手动） |
+| 会话结束，要交接给下一个 agent | `handoff`（生成临时 handoff 文档，仅手动） |
+| 第一次使用 Matt Pocock 工程技能，配置 issue tracker / triage | `setup-matt-pocock-skills`（仅手动） |
+| 上一段没听懂，要求重新讲清楚 | `wait-what`（仅手动） |
+| 写 skill、改 AGENTS.md / CLAUDE.md | `writing-for-agents` |
 
 ## 调用方式
 
 - 大多数 skill 由 AI 按场景自动触发，直接用自然语说明要做的事即可；
 - `teach` 为仅手动调用，需输入 `/teach <想学的东西>`；
-- 本仓库已安装技能见 `.zcode/skills/` 目录（30 个）。
+- `ask-matt` / `handoff` / `setup-matt-pocock-skills` / `wait-what` 也是仅手动调用（`disable-model-invocation`），需要时由用户输入对应命令；
+- 本仓库已安装技能见 `.zcode/skills/` 目录（35 个）。
 
 ## 典型学习工作流
 
