@@ -108,6 +108,36 @@
 </dl>
 
 <dl class="term">
+  <dt>crate（编译单元）</dt>
+  <dd>一次编译单元 / 一个构建目标，拥有唯一的模块树根；src/main.rs 是 binary crate 根，src/lib.rs 是 library crate 根，src/bin/*.rs 是额外的 binary crate 根。一个 package 可含多个 crate；crate:: 指当前 crate 的根。</dd>
+  <dd class="avoid">避免：项目（package）、文件（只有 crate 根文件才是入口）</dd>
+</dl>
+
+<dl class="term">
+  <dt>模块（module）</dt>
+  <dd>crate 内的命名空间，用 mod 声明；文件只是模块的存放位置。模块树从 crate 根向下展开，路径用 crate:: / self:: / super:: 表示。</dd>
+  <dd class="avoid">避免：文件、类、对象</dd>
+</dl>
+
+<dl class="term">
+  <dt>可见性（visibility）</dt>
+  <dd>项能否被某个作用域访问。默认私有（当前模块及后代）；pub(super) 父模块；pub(crate) 整个 crate；pub 外部 crate（路径每层都要可见）。</dd>
+  <dd class="avoid">避免：权限、作用域（作用域是另一件事）</dd>
+</dl>
+
+<dl class="term">
+  <dt>引入（use）</dt>
+  <dd>在当前作用域建立路径快捷方式；只影响该作用域，不改变可见性，也不会自动传给子模块。</dd>
+  <dd class="avoid">避免：PATH 环境变量、include、宏替换</dd>
+</dl>
+
+<dl class="term">
+  <dt>重导出（pub use）</dt>
+  <dd>带 pub 的 use：把被引入的名字放进当前模块的公开 API。导出的是指定项，不一定是整个模块；原项必须可见。</dd>
+  <dd class="avoid">避免：公开整个模块、复制定义</dd>
+</dl>
+
+<dl class="term">
   <dt>常量（const）</dt>
   <dd>编译期求值的命名值；必须标注类型、永远不可变，使用处内联/复制。不保证固定地址或份数；可以出现在数组长度等常量上下文里。需要固定地址时用静态项。</dd>
   <dd class="avoid">避免：常量变量（它不是变量）、C 的 const int（只读对象，通常有存储）</dd>
@@ -176,6 +206,18 @@
 </dl>
 
 <h2>工具链</h2>
+
+<dl class="term">
+  <dt>package（Cargo 包）</dt>
+  <dd>一个带 Cargo.toml 的 Cargo 项目；最多 1 个 library crate + 任意多个 binary crate。package 不是 crate，可以包含多个 crate。</dd>
+  <dd class="avoid">避免：项目=crate、包=单个可执行文件</dd>
+</dl>
+
+<dl class="term">
+  <dt>workspace（工作区）</dt>
+  <dd>多个 package 的集合；根 Cargo.toml 用 [workspace] members 列出成员。workspace 根也可以是 package（根 package）。</dd>
+  <dd class="avoid">避免：crate、package（workspace 是更外层的组织）</dd>
+</dl>
 
 <dl class="term">
   <dt>rustup</dt>

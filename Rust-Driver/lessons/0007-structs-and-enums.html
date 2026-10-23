@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第七课：结构体与枚举 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0007</span>
+  <span>预计 15–20 分钟</span>
+  <span>前置：第六课 CP1–CP3 完成</span>
+  <span>阶段：语言预备期（第 7 课）</span>
+</div>
+
+<h1>第七课：结构体与枚举——给固件数据建模</h1>
+
+<div class="callout teacher">
+  <b>第六课已结课：</b>WoL 已经拆成 <code>main.rs</code> + <code>protocol.rs</code>，模块与可见性 CP1–CP3 全部通过。今天从“函数和常量”进入“数据模型”：<br>
+  <b>结构体（struct）</b>把相关字段装进一个值；<b>枚举（enum）</b>表示“几种形状之一”；<code>impl</code> 挂行为；<code>match</code> 把每种形状拆开处理。<br>
+  C 锚点：<b>struct 是 AND</b>（同时拥有所有字段），<b>enum 是 OR</b>（只能是其中一种）；Rust 没有继承，组合靠字段和枚举。
+</div>
+
+<p class="meta">本课示例均用 rustc 1.99.1（edition 2021）实测；英文原文与报错附中文对照。</p>
+
+<h2>1. 结构体：把相关字段装进一个值</h2>
+
+<pre><code>#[derive(Debug)]
+struct ButtonState {
+    pin: u8,
+    pressed: bool,
+}
+
+fn main() {
+    let mut button = ButtonState {
+        pin: 15,
+        pressed: false,
+    };
+
+    button.pressed = true;
+    println!("{button:?}");
+}</code></pre>
+
+<ul>
+  <li><b>命名字段结构体</b>：每个字段有名字和类型；用 <code>结构体名 { 字段: 值 }</code> 创建实例；用 <code>.</code> 访问字段。</li>
+  <li><b>整个实例必须声明为 <code>mut</code></b>，Rust 不允许只把某个字段标成可变。</li>
+  <li><code>#[derive(Debug)]</code> 让编译器生成 <code>Debug</code> 实现，所以能用 <code>{:?}</code> 打印；细节在 trait 课展开，今天先用它观察数据。</li>
+  <li>字段名和变量名相同时可以简写：<code>ButtonState { pin, pressed: false }</code> 里的 <code>pin</code> 就是 <code>pin: pin</code>。</li>
+</ul>
+
+<p>结构体更新语法：用旧实例的其余字段补全新实例：</p>
+
+<pre><code>let next = ButtonState {
+    pressed: true,
+    ..button
+};</code></pre>
+
+<div class="callout warn">
+  <b>所有权：</b>结构体拥有它的字段。更新语法里的 <code>..button</code> 会像赋值一样移动/复制字段；如果字段是 <code>String</code> 这类非 <code>Copy</code> 类型，旧实例之后就不能整体再用。当前 <code>ButtonState</code> 的字段是 <code>u8</code> / <code>bool</code>（都是 <code>Copy</code>），所以 <code>button</code> 还能用。
+</div>
+
+<h3>1.1 元组结构体与单元结构体</h3>
+
+<pre><code>struct Pin(u8);      // 元组结构体：字段没有名字，用 .0 访问
+struct Marker;       // 单元结构体：没有字段
+
+fn main() {
+    let pin = Pin(15);
+    println!("{}", pin.0);
+
+    let marker = Marker;
+    println!("{:?}", marker); // 需要 #[derive(Debug)]
+}</code></pre>
+
+<table>
+  <tr><th>写法</th><th>适用场景</th><th>C 类比</th></tr>
+  <tr><td>命名字段结构体</td><td>字段多、要可读性</td><td><code>struct ButtonState { ... };</code></td></tr>
+  <tr><td>元组结构体</td><td>新类型（newtype）、单位值、字段顺序就是语义</td><td><code>typedef struct { ... } Pin;</code> 的轻量版</td></tr>
+  <tr><td>单元结构体</td><td>只做标记 / 挂 trait，不存数据</td><td>空的标记结构体</td></tr>
+</table>
+
+<p>Rust 结构体不需要 <code>typedef</code>，类型名直接可用；方法也不写在结构体大括号里，而是放到 <code>impl</code> 块。字段可见性仍受第六课规则约束：<code>pub struct</code> 的字段默认仍是私有的；本课都在同一模块里，先不展开。</p>
+
+<h2>2. impl：把行为挂到类型上</h2>
+
+<pre><code>impl ButtonState {
+    // 关联函数：没有 self，用 ButtonState::new(...) 调用
+    fn new(pin: u8) -&gt; Self {
+        Self {
+            pin,
+            pressed: false,
+        }
+    }
+
+    // 方法：&amp;self，只读借用
+    fn is_pressed(&amp;self) -&gt; bool {
+        self.pressed
+    }
+
+    // 方法：&amp;mut self，可变借用
+    fn press(&amp;mut self) {
+        self.pressed = true;
+    }
+}</code></pre>
+
+<ul>
+  <li><code>impl ButtonState { ... }</code> 里的函数都关联到 <code>ButtonState</code>；一个类型可以有多个 <code>impl</code> 块。</li>
+  <li><code>Self</code> 是 <code>impl</code> 后面那个类型的别名，这里就是 <code>ButtonState</code>。</li>
+  <li><b>关联函数</b>没有 <code>self</code> 参数，用 <code>类型::函数(...)</code> 调用；<code>new</code> 是最常见的构造器。</li>
+  <li><b>方法</b>的第一个参数是 <code>self</code> 的某种形式，用 <code>实例.方法(...)</code> 调用。</li>
+</ul>
+
+<table>
+  <tr><th>第一个参数</th><th>权限</th><th>典型用途</th></tr>
+  <tr><td><code>&amp;self</code></td><td>只读借用</td><td>查询、计算，不改数据</td></tr>
+  <tr><td><code>&amp;mut self</code></td><td>可变借用</td><td>修改字段</td></tr>
+  <tr><td><code>self</code></td><td>取得所有权</td><td>消耗并转换成别的东西（较少用）</td></tr>
+</table>
+
+<p>这和第三课的“先看 <code>self</code> 签名”是同一张地图：<code>&amp;self</code> 只读、<code>&amp;mut self</code> 可改、<code>self</code> 拿走所有权。</p>
+
+<pre><code>let mut button = ButtonState::new(15);
+println!("{}", button.is_pressed()); // false
+button.press();
+println!("{}", button.is_pressed()); // true</code></pre>
+
+<p>Rust 没有 C++ 的 <code>-&gt;</code> 运算符；<code>button.is_pressed()</code> 会自动按方法签名加上 <code>&amp;</code> / <code>&amp;mut</code>（自动引用与解引用）。方法也可以定义在枚举上，后面会用到。</p>
+
+<h2>3. 枚举：一个值，几种形状</h2>
+
+<pre><code>#[derive(Debug)]
+enum ButtonEvent {
+    Pressed { pin: u8 },
+    Released { pin: u8 },
+    Held { pin: u8, ms: u32 },
+}</code></pre>
+
+<ul>
+  <li>枚举的值只能是**其中一个变体**：<code>Pressed</code>、<code>Released</code>、<code>Held</code> 三选一。</li>
+  <li>每个变体可以带**不同数量和类型的数据**：前两个带一个 <code>pin</code>，<code>Held</code> 还带 <code>ms</code>。</li>
+  <li>变体也分形状：<code>Quit</code> 是单元变体，<code>Write(String)</code> 是元组变体，<code>Move { x, y }</code> 是结构体变体。</li>
+  <li>定义枚举会自动给每个变体生成构造器：<code>ButtonEvent::Pressed { pin: 15 }</code>。</li>
+</ul>
+
+<div class="callout">
+  <b>struct 是 AND，enum 是 OR。</b> 结构体实例同时拥有所有字段；枚举值只能是其中一个变体。需要“这几个字段总是一起出现”用结构体；需要“几种互斥形状之一”用枚举。
+</div>
+
+<p>标准库的 <code>Option&lt;T&gt;</code> 就是枚举：</p>
+
+<pre><code>enum Option&lt;T&gt; {
+    None,
+    Some(T),
+}</code></pre>
+
+<p>它表示“可能有值，也可能没有”。下一课的错误处理会正式讲 <code>Option</code> / <code>Result</code>；今天先知道：**枚举不只会出现在你自己的代码里，标准库也用它表达“几种情况之一”。**</p>
+
+<h2>4. match：把每种形状都处理掉</h2>
+
+<pre><code>fn describe(event: ButtonEvent) {
+    match event {
+        ButtonEvent::Pressed { pin } =&gt; println!("pin {pin}: pressed"),
+        ButtonEvent::Released { pin } =&gt; println!("pin {pin}: released"),
+        ButtonEvent::Held { pin, ms } =&gt; println!("pin {pin}: held {ms} ms"),
+    }
+}</code></pre>
+
+<ul>
+  <li><code>match</code> 按顺序比较模式和值，命中第一个就执行对应分支。</li>
+  <li>模式可以**解构并绑定数据**：<code>Pressed { pin }</code> 把变体里的 <code>pin</code> 绑到同名变量。</li>
+  <li><b>必须穷尽所有变体</b>；漏一个就报 E0004。这是 Rust 把“忘记处理某种情况”变成编译错误的地方。</li>
+  <li><code>_</code> 是通配符，表示“其余情况都归这里”；<code>if let</code> 只关心一种模式，代价是失去穷尽检查。</li>
+</ul>
+
+<div class="callout warn">
+  <code>error[E0004]: non-exhaustive patterns: `ButtonEvent::Held` not covered</code><br>
+  （错误[E0004]：模式不穷尽：没有覆盖 `ButtonEvent::Held`）
+</div>
+
+<pre><code>// 只关心 Pressed：if let
+if let ButtonEvent::Pressed { pin } = event {
+    println!("pressed {pin}");
+}
+
+// 只关心一部分：match + 通配符
+match event {
+    ButtonEvent::Pressed { pin } =&gt; println!("pressed {pin}"),
+    _ =&gt; println!("other event"),
+}</code></pre>
+
+<p><code>match</code> 是表达式，每个分支要返回同一种类型；分支代码多行时用大括号。C 的 <code>switch</code> 需要手动 <code>break</code>，Rust 的 <code>match</code> 不会“贯穿”，而且编译器检查穷尽。</p>
+
+<h2>5. 固件视角：按键状态与事件</h2>
+
+<p>摇杆固件里，按键不只是一个 <code>bool</code>，而是一串事件：按下、保持、松开。用结构体存状态，用枚举表达事件，用 <code>match</code> 处理：</p>
+
+<pre><code>#[derive(Debug)]
+struct ButtonState {
+    pin: u8,
+    pressed: bool,
+}
+
+#[derive(Debug)]
+enum ButtonEvent {
+    Pressed { pin: u8 },
+    Released { pin: u8 },
+    Held { pin: u8, ms: u32 },
+}
+
+impl ButtonState {
+    fn new(pin: u8) -&gt; Self {
+        Self {
+            pin,
+            pressed: false,
+        }
+    }
+
+    fn update(&amp;mut self, pressed: bool, ms: u32) -&gt; ButtonEvent {
+        if pressed &amp;&amp; !self.pressed {
+            self.pressed = true;
+            ButtonEvent::Pressed { pin: self.pin }
+        } else if !pressed &amp;&amp; self.pressed {
+            self.pressed = false;
+            ButtonEvent::Released { pin: self.pin }
+        } else {
+            ButtonEvent::Held {
+                pin: self.pin,
+                ms,
+            }
+        }
+    }
+}
+
+fn main() {
+    let mut button = ButtonState::new(15);
+
+    for (pressed, ms) in [(true, 10), (true, 20), (false, 30)] {
+        match button.update(pressed, ms) {
+            ButtonEvent::Pressed { pin } =&gt; println!("pin {pin}: pressed"),
+            ButtonEvent::Released { pin } =&gt; println!("pin {pin}: released"),
+            ButtonEvent::Held { pin, ms } =&gt; println!("pin {pin}: held {ms} ms"),
+        }
+    }
+}</code></pre>
+
+<p>输出：</p>
+
+<pre><code>pin 15: pressed
+pin 15: held 20 ms
+pin 15: released</code></pre>
+
+<p>为什么用枚举而不是一个带 <code>pressed</code> / <code>released</code> / <code>held</code> 三个 bool 的结构体？因为三个 bool 能组合出“同时 pressed 又 released”这种非法状态；枚举只允许三选一，<code>match</code> 又强迫你处理每一种。C 里常用“tag + union”模拟这种安全枚举；Rust 的 enum 把这个模式做成了语言内建，并自动检查穷尽。</p>
+
+<h2>6. 互动练习</h2>
+
+<p>四段代码，判断每段是<b>编译错误</b>还是<b>正常运行</b>。全部答完看总分。</p>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <div class="quiz-code">struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let p = Point { x: 0, y: 0 };
+    p.x = 1;
+    println!("{} {}", p.x, p.y);
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">#[derive(Debug)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let a = Point { x: 1, y: 2 };
+    let b = Point { x: 3, ..a };
+    println!("{} {}", b.x, b.y);
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <div class="quiz-code">enum Light {
+    Red,
+    Green,
+    Blue,
+}
+
+fn main() {
+    let light = Light::Red;
+    match light {
+        Light::Red =&gt; println!("red"),
+        Light::Green =&gt; println!("green"),
+    }
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">#[derive(Debug)]
+enum ButtonEvent {
+    Pressed { pin: u8 },
+    Released { pin: u8 },
+}
+
+fn main() {
+    let event = ButtonEvent::Pressed { pin: 3 };
+    let _other = ButtonEvent::Released { pin: 4 };
+    match event {
+        ButtonEvent::Pressed { pin } =&gt; println!("pressed {pin}"),
+        ButtonEvent::Released { pin } =&gt; println!("released {pin}"),
+    }
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 4</p>
+
+<h2>7. 课后任务（按 checkpoint 交）</h2>
+
+<p>三项任务有依赖，按顺序做，一次交一项；没有代码和运行输出，不算完成。</p>
+
+<table>
+  <tr><th>checkpoint</th><th>对应课节</th><th>交付物</th><th>验收证据</th></tr>
+  <tr>
+    <td><b>CP1</b></td>
+    <td>第 1–4 节 + The Book 5.1 / 5.3 / 6.1–6.3</td>
+    <td>三条编号笔记：<br>
+      ① 命名字段结构体、元组结构体、单元结构体的区别与适用场景；结构体字段的所有权（<code>String</code> 字段和引用字段的差别）。<br>
+      ② <code>&amp;self</code> / <code>&amp;mut self</code> / <code>self</code> 三种方法签名分别能做什么；关联函数 <code>new</code> 与方法的区别；<code>Self</code> 是什么。<br>
+      ③ 枚举变体如何携带数据；<code>match</code> 的穷尽检查、<code>_</code>、<code>if let</code> 的区别。</td>
+    <td>用自己的话，每条 2–4 句；至少附一个最小代码片段</td>
+  </tr>
+  <tr>
+    <td><b>CP2</b></td>
+    <td>第 1–4 节 + rustlings 07_structs / 08_enums</td>
+    <td>完成 rustlings <code>structs1–3</code> 与 <code>enums1–3</code>；贴出关键代码（更新语法、impl、match 各一处）。</td>
+    <td>六题通过；<code>rustlings</code> 状态显示 07/08 完成；用 2–3 句解释一处更新语法的所有权，或一处 match 分支。</td>
+  </tr>
+  <tr>
+    <td><b>CP3</b></td>
+    <td>第 2、5 节</td>
+    <td>在 <code>Rust-Driver/demo/</code> 下新建 <code>button-model</code>：定义 <code>ButtonState</code> 结构体、<code>ButtonEvent</code> 枚举，写 <code>new</code> 与 <code>update(&amp;mut self, pressed, ms)</code>；在 main 模拟 <code>true/true/false</code> 三次采样，用 <code>match</code> 打印事件。</td>
+    <td>代码 + <code>cargo run</code> 输出（三行：pressed / held / released）+ 一句话：为什么用枚举而不是三个 bool</td>
+  </tr>
+</table>
+
+<p>加餐（不占 checkpoint）：给 <code>ButtonEvent</code> 写一个 <code>impl</code> 方法，例如 <code>fn pin(&amp;self) -&gt; u8</code>，用 <code>match self</code> 返回对应引脚；或者用 <code>struct Pin(u8)</code> 把引脚号包成新类型。</p>
+
+<h2>8. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议按顺序读）：<br>
+<a href="https://doc.rust-lang.org/book/ch05-01-defining-structs.html" target="_blank">The Rust Book 5.1: Defining and Instantiating Structs</a><br>
+<a href="https://doc.rust-lang.org/book/ch05-03-method-syntax.html" target="_blank">The Rust Book 5.3: Method Syntax</a><br>
+<a href="https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html" target="_blank">The Rust Book 6.1: Defining an Enum</a><br>
+<a href="https://doc.rust-lang.org/book/ch06-02-match.html" target="_blank">The Rust Book 6.2: The match Control Flow Construct</a><br>
+<a href="https://doc.rust-lang.org/book/ch06-03-if-let.html" target="_blank">The Rust Book 6.3: Concise Control Flow with if let</a></p>
+
+<p><b>下一课预告</b>：<code>Option</code> 与错误处理——把今天学的枚举用到标准库的 <code>Option&lt;T&gt;</code> / <code>Result&lt;T, E&gt;</code>，再学 <code>?</code> 与 <code>unwrap</code> 的边界。之后是 trait 与泛型。</p>
+
+<p><b>随时提问</b>：字段为什么不能单独 <code>mut</code>、<code>match</code> 为什么必须穷尽、枚举和结构体怎么选——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0006-modules-and-visibility.html">第六课：模块与可见性</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../demo/wol/README.md">WoL 项目</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构同前六课：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice="ok" 表示该选项是"正常运行"，
+   data-choice="err" 表示"编译错误"。
+   ============================================================ */
+
+var QUIZ_ANSWERS = [
+  {
+    correct: "err",
+    okMsg: "对。字段赋值要求整个实例是 mut；let p 不可变，报 E0594（cannot assign to `p.x`, as `p` is not declared as mutable）。",
+    errMsg: "不对。即使只改一个字段，也要把整个绑定写成 let mut p；否则报 E0594。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。..a 用 a 的其余字段补全；这里字段都是 Copy，b 得到 x=3、y=2，输出 3 2。",
+    errMsg: "不对。..a 是结构体更新语法，会复制/移动其余字段；这里输出 3 2。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。match 必须覆盖所有变体；Light::Blue 没有分支，报 E0004（non-exhaustive patterns: `Light::Blue` not covered）。",
+    errMsg: "不对。match 要求穷尽；缺少 Light::Blue，编译器报 E0004。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。Pressed { pin } 模式把字段绑定到 pin；输出 pressed 3。",
+    errMsg: "不对。match 能解构枚举变体并绑定字段；这段输出 pressed 3。"
+  }
+];
+
+var answered = { 0: false, 1: false, 2: false, 3: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }   // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 4";
+
+      if (score === 4) {
+        document.getElementById("score").textContent =
+          "本轮得分：4 / 4 —— 全对。结构体与枚举这关你过了，下一课见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>

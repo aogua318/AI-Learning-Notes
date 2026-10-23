@@ -154,6 +154,14 @@ s.clear();                        // 编译通过：不可变借用已结束
 - 精度：`parse_mac` 仍返回 `Vec<u8>`，这一步只把包体改成定长；完全无分配留到固件课。
 - 完整任务见 [lessons/0005-const-and-compile-time.html](../../lessons/0005-const-and-compile-time.html)。
 
+## 第六课练习：模块拆分（已完成）
+
+- `src/protocol.rs`：协议常量、`const _` 断言、`build_magic_packet`、`parse_mac`、`print_hex`。
+- `src/main.rs`：`mod protocol;` + `use protocol::{build_magic_packet, print_hex};`，保留 `first_word` 与 `main`。
+- 可见性：`build_magic_packet` / `print_hex` 为 `pub`；`parse_mac` 与常量保持私有（同模块内可见，main 不需要它们）。
+- `cargo fmt`、`cargo check` 通过；`cargo run` 输出仍为 102 字节魔术包。
+- 完整任务见 [lessons/0006-modules-and-visibility.html](../../lessons/0006-modules-and-visibility.html)。
+
 ## 下一步（项目路线）
 
 1. MAC 地址从命令行参数读入（`std::env::args()`，顺带练 `Option`）；

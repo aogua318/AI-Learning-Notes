@@ -14,6 +14,8 @@
   const 内联与地址不保证、static 固定分配与 static mut 需要 unsafe、const 上下文与 E0080 的规范出处。用途：第五课规则核对与错误编号。
 - [The Rust Book 7.1–7.5: Managing Growing Projects](https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html) ✅
   模块树、默认私有、crate/self/super 路径、use/as/pub use、文件模块的原文出处。用途：第六课主教材；rustlings 10_modules 配套。
+- [The Rust Book 5.1 Defining Structs](https://doc.rust-lang.org/book/ch05-01-defining-structs.html) / [5.3 Method Syntax](https://doc.rust-lang.org/book/ch05-03-method-syntax.html) / [6.1 Defining an Enum](https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html) / [6.2 match](https://doc.rust-lang.org/book/ch06-02-match.html) / [6.3 if let](https://doc.rust-lang.org/book/ch06-03-if-let.html) ✅
+  结构体三种形态、impl 与 self 签名、枚举变体携带数据、match 穷尽与 if let 的原文出处。用途：第七课主教材；rustlings 07_structs / 08_enums 配套。
 - [Rustlings（rust-lang 官方练习，MIT）](https://github.com/rust-lang/rustlings) ✅
   小型练习集，编译错误即反馈。用途：与 The Book 同步刷，move_semantics 系列练习是第一课的直接配套。
 - [rp2040-hal API 文档（docs.rs）](https://docs.rs/rp2040-hal/latest/rp2040_hal/) ✅
