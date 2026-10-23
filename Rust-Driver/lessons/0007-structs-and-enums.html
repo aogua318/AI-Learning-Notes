@@ -128,6 +128,63 @@ println!("{}", button.is_pressed()); // true</code></pre>
 
 <p>Rust 没有 C++ 的 <code>-&gt;</code> 运算符；<code>button.is_pressed()</code> 会自动按方法签名加上 <code>&amp;</code> / <code>&amp;mut</code>（自动引用与解引用）。方法也可以定义在枚举上，后面会用到。</p>
 
+<h3>2.1 为什么 impl 不写在 struct 里</h3>
+
+<p><code>struct</code> 只负责“数据长什么样”，<code>impl</code> 负责“这个类型能做什么”。两者是平级的 item；<code>impl</code> 不改变结构体的内存布局，也不会给每个实例存函数指针。</p>
+
+<p>C 锚点：C 里是 <code>struct ButtonState { ... };</code> 加自由函数 <code>void button_press(ButtonState *b)</code>；Rust 用 <code>impl</code> 把这些自由函数收进类型命名空间，换来方法调用语法：</p>
+
+<pre><code>button.press();
+// 等价于全限定调用（UFCS）：
+ButtonState::press(&amp;mut button);</code></pre>
+
+<ul>
+  <li><b>trait 实现必须独立写。</b><code>impl Display for ButtonState { ... }</code> 不能塞进 struct 大括号；<code>#[derive(Debug)]</code> 就是让编译器生成这样一个 impl。</li>
+  <li><b>可以按功能拆成多个块。</b>构造、查询、更新、打印可以各占一个 impl，便于阅读；大类型还能拆到同一 crate 的不同模块/文件里（但别的模块仍然不能访问私有字段）。</li>
+  <li><b>支持泛型和条件实现。</b><code>impl&lt;T&gt; Wrapper&lt;T&gt;</code> 与 <code>impl&lt;T: Display&gt; Wrapper&lt;T&gt;</code> 可以分开写，后者只在 <code>T: Display</code> 时提供方法。</li>
+  <li><b>数据与行为解耦。</b>加方法不改变布局；没有继承，组合靠字段和枚举。trait impl 还受孤儿规则约束：类型和 trait 至少有一个属于当前 crate。</li>
+</ul>
+
+<h3>2.2 一个类型可以有多个 impl 块</h3>
+
+<p>可以，<code>impl ButtonState { ... }</code> 能出现多次；编译器把它们收集起来，方法查找在编译期完成，块与块的先后顺序不影响调用。</p>
+
+<pre><code>struct ButtonState {
+    pin: u8,
+    pressed: bool,
+}
+
+// 第一个 inherent impl：构造
+impl ButtonState {
+    fn new(pin: u8) -&gt; Self {
+        Self { pin, pressed: false }
+    }
+}
+
+// 第二个 inherent impl：查询
+impl ButtonState {
+    fn is_pressed(&amp;self) -&gt; bool {
+        self.pressed
+    }
+}
+
+// trait impl：打印
+impl std::fmt::Display for ButtonState {
+    fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;) -&gt; std::fmt::Result {
+        write!(f, "pin {} pressed {}", self.pin, self.pressed)
+    }
+}</code></pre>
+
+<p>两个 inherent 块里的方法都能直接调用：<code>ButtonState::new(15)</code>、<code>b.is_pressed()</code>；<code>Display</code> 实现让 <code>println!("{b}")</code> 可用。</p>
+
+<div class="callout warn">
+  <b>两条冲突规则：</b><br>
+  两个 inherent impl 里出现同名方法：<code>error[E0592]: duplicate definitions with name `f`</code>（重复定义）。<br>
+  同一个 trait 对同一个类型实现两次：<code>error[E0119]: conflicting implementations</code>（实现冲突）。
+</div>
+
+<p>inherent impl 必须和类型在同一个 crate；trait impl 受孤儿规则限制。</p>
+
 <h2>3. 枚举：一个值，几种形状</h2>
 
 <pre><code>#[derive(Debug)]
@@ -138,8 +195,8 @@ enum ButtonEvent {
 }</code></pre>
 
 <ul>
-  <li>枚举的值只能是**其中一个变体**：<code>Pressed</code>、<code>Released</code>、<code>Held</code> 三选一。</li>
-  <li>每个变体可以带**不同数量和类型的数据**：前两个带一个 <code>pin</code>，<code>Held</code> 还带 <code>ms</code>。</li>
+  <li>枚举的值只能是<b>其中一个变体</b>：<code>Pressed</code>、<code>Released</code>、<code>Held</code> 三选一。</li>
+  <li>每个变体可以带<b>不同数量和类型的数据</b>：前两个带一个 <code>pin</code>，<code>Held</code> 还带 <code>ms</code>。</li>
   <li>变体也分形状：<code>Quit</code> 是单元变体，<code>Write(String)</code> 是元组变体，<code>Move { x, y }</code> 是结构体变体。</li>
   <li>定义枚举会自动给每个变体生成构造器：<code>ButtonEvent::Pressed { pin: 15 }</code>。</li>
 </ul>
@@ -148,6 +205,26 @@ enum ButtonEvent {
   <b>struct 是 AND，enum 是 OR。</b> 结构体实例同时拥有所有字段；枚举值只能是其中一个变体。需要“这几个字段总是一起出现”用结构体；需要“几种互斥形状之一”用枚举。
 </div>
 
+<h3>3.1 状态 vs 事件：三个变体不是三个状态</h3>
+
+<p><code>ButtonState.pressed</code> 是<b>状态（level）</b>：现在按没按下，只有 <code>true</code> / <code>false</code> 两种。<code>ButtonEvent</code> 是<b>事件（edge / change）</b>：刚刚发生了什么。两者别混。</p>
+
+<table>
+  <tr><th>变体</th><th><code>update</code> 里的触发条件</th><th>描述的是</th></tr>
+  <tr><td><code>Pressed</code></td><td><code>pressed &amp;&amp; !self.pressed</code></td><td>从未按下变成按下的瞬间（上升沿）</td></tr>
+  <tr><td><code>Released</code></td><td><code>!pressed &amp;&amp; self.pressed</code></td><td>从按下变成松开的瞬间（下降沿）</td></tr>
+  <tr><td><code>Held</code></td><td>其余情况（状态没变）</td><td>保持中；本次采样的 <code>ms</code></td></tr>
+</table>
+
+<p>同一次按键在时间线上的三个事件：</p>
+
+<pre><code>采样        (true,10)   (true,20)   (false,30)
+上一状态     false       true        true
+当前状态     true        true        false
+事件         Pressed     Held        Released</code></pre>
+
+<p>所以 <code>Pressed</code> / <code>Released</code> 是<b>边沿事件</b>，<code>Held</code> 是<b>持续事件</b>；<code>ms</code> 是本次采样间隔，不是累计按住时长。为什么不用一个 <code>bool</code>？因为 <code>bool</code> 只说“现在按没按下”，说不出“刚刚按下”“刚刚松开”“已经按住多久”。</p>
+
 <p>标准库的 <code>Option&lt;T&gt;</code> 就是枚举：</p>
 
 <pre><code>enum Option&lt;T&gt; {
@@ -155,7 +232,7 @@ enum ButtonEvent {
     Some(T),
 }</code></pre>
 
-<p>它表示“可能有值，也可能没有”。下一课的错误处理会正式讲 <code>Option</code> / <code>Result</code>；今天先知道：**枚举不只会出现在你自己的代码里，标准库也用它表达“几种情况之一”。**</p>
+<p>它表示“可能有值，也可能没有”。下一课的错误处理会正式讲 <code>Option</code> / <code>Result</code>；今天先知道：<b>枚举不只会出现在你自己的代码里，标准库也用它表达“几种情况之一”。</b></p>
 
 <h2>4. match：把每种形状都处理掉</h2>
 
@@ -169,7 +246,7 @@ enum ButtonEvent {
 
 <ul>
   <li><code>match</code> 按顺序比较模式和值，命中第一个就执行对应分支。</li>
-  <li>模式可以**解构并绑定数据**：<code>Pressed { pin }</code> 把变体里的 <code>pin</code> 绑到同名变量。</li>
+  <li>模式可以<b>解构并绑定数据</b>：<code>Pressed { pin }</code> 把变体里的 <code>pin</code> 绑到同名变量。</li>
   <li><b>必须穷尽所有变体</b>；漏一个就报 E0004。这是 Rust 把“忘记处理某种情况”变成编译错误的地方。</li>
   <li><code>_</code> 是通配符，表示“其余情况都归这里”；<code>if let</code> 只关心一种模式，代价是失去穷尽检查。</li>
 </ul>
@@ -191,6 +268,43 @@ match event {
 }</code></pre>
 
 <p><code>match</code> 是表达式，每个分支要返回同一种类型；分支代码多行时用大括号。C 的 <code>switch</code> 需要手动 <code>break</code>，Rust 的 <code>match</code> 不会“贯穿”，而且编译器检查穷尽。</p>
+
+<h3>4.1 拆开一条 match arm</h3>
+
+<pre><code>ButtonEvent::Pressed { pin }   =&gt;   println!("pin {pin}: pressed"),
+└──────── 模式 ────────┘        └──────── 分支表达式 ────────┘</code></pre>
+
+<ul>
+  <li><code>ButtonEvent::Pressed { pin }</code> 是<b>模式</b>，不是构造值：它匹配 <code>Pressed</code> 变体，并把字段 <code>pin</code> 绑到一个新变量 <code>pin</code>。长写法是 <code>Pressed { pin: pin }</code>，冒号左边是字段名，右边是绑定名；<code>{ pin }</code> 是字段简写。</li>
+  <li><code>=&gt;</code> 是 match arm 的语法规则；<code>,</code> 分隔各条 arm。</li>
+  <li><code>println!("pin {pin}: pressed")</code> 里的 <code>{pin}</code> 是行内格式捕获（Rust 2021），等价于 <code>println!("pin {}: pressed", pin)</code>，属于语法糖；<code>println!</code> 本身是宏。</li>
+</ul>
+
+<p>长写法对照：</p>
+
+<pre><code>ButtonEvent::Pressed { pin: pin } =&gt; println!("pin {}: pressed", pin),</code></pre>
+
+<div class="callout">
+  <b>模式绑定的所有权：</b><code>pin: u8</code> 是 <code>Copy</code>，模式绑定只复制一个字节，原事件还能用。若字段是 <code>String</code>，<code>Pressed { pin }</code> 会把 <code>String</code> 移出来，事件变成“部分移动”，之后再用报 E0382（借用已部分移动的值）。
+</div>
+
+<h3>4.2 执行顺序</h3>
+
+<p><code>fn describe</code> 只是定义，函数体不会在定义时执行；<code>match event</code> 在 <code>describe(...)</code> 被调用时才运行。顺序是：</p>
+
+<ol>
+  <li><code>describe(x)</code> 把 <code>x</code> 按值传进参数 <code>event</code>；<code>ButtonEvent</code> 没有 <code>Copy</code>，这里发生移动。</li>
+  <li>进入函数体，<code>match event</code> 求值被匹配的值（只求一次）。</li>
+  <li>从上到下试模式，第一个匹配的 arm 执行，其余不执行；C 的 <code>switch</code> 需要 <code>break</code>，Rust 不会贯穿。</li>
+  <li>执行 arm 的表达式；所有 arm 必须返回同一种类型，这里 <code>println!</code> 返回 <code>()</code>。</li>
+  <li><code>match</code> 是表达式，整个 match 的值就是选中 arm 的值。</li>
+</ol>
+
+<p><b>穷尽检查是编译期，选中哪个分支是运行期。</b>漏掉变体不是运行到 <code>default</code>，而是编译期 E0004。</p>
+
+<div class="callout warn">
+  课程第 4 节的 <code>describe</code> 只是示例，后面的 <code>main</code> 没有调用它；真正执行的是第 5 节 <code>main</code> 里内联的 <code>match button.update(...)</code>。两者结构一样，只是一个包在函数里，一个直接写在循环里。
+</div>
 
 <h2>5. 固件视角：按键状态与事件</h2>
 
@@ -250,6 +364,10 @@ fn main() {
 <pre><code>pin 15: pressed
 pin 15: held 20 ms
 pin 15: released</code></pre>
+
+<div class="callout warn">
+  <b>课程版的简化：</b><code>update</code> 的 <code>else</code> 同时接住了 <code>true/true</code> 和 <code>false/false</code>，所以刚初始化的按钮喂 <code>(false, 10)</code> 也会得到 <code>Held</code>。严格说 <code>Held</code> 只应在上一次和这一次都按下时发；<code>false/false</code> 应是“无事件”。本课为了避开 <code>Option</code> 先这样写；CP3 按课程版实现即可，知道这个边界即可。
+</div>
 
 <p>为什么用枚举而不是一个带 <code>pressed</code> / <code>released</code> / <code>held</code> 三个 bool 的结构体？因为三个 bool 能组合出“同时 pressed 又 released”这种非法状态；枚举只允许三选一，<code>match</code> 又强迫你处理每一种。C 里常用“tag + union”模拟这种安全枚举；Rust 的 enum 把这个模式做成了语言内建，并自动检查穷尽。</p>
 
@@ -351,7 +469,7 @@ fn main() {
   <tr><th>checkpoint</th><th>对应课节</th><th>交付物</th><th>验收证据</th></tr>
   <tr>
     <td><b>CP1</b></td>
-    <td>第 1–4 节 + The Book 5.1 / 5.3 / 6.1–6.3</td>
+    <td>第 1–4 节（含 2.1–2.2、3.1、4.1–4.2）+ The Book 5.1 / 5.3 / 6.1–6.3</td>
     <td>三条编号笔记：<br>
       ① 命名字段结构体、元组结构体、单元结构体的区别与适用场景；结构体字段的所有权（<code>String</code> 字段和引用字段的差别）。<br>
       ② <code>&amp;self</code> / <code>&amp;mut self</code> / <code>self</code> 三种方法签名分别能做什么；关联函数 <code>new</code> 与方法的区别；<code>Self</code> 是什么。<br>
