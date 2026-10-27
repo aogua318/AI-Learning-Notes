@@ -41,7 +41,7 @@
 ## 学习进度
 
 - 2026-10-19：rustlings 环境就绪——项目在 `E:\demo\rust\rustlings`（init 生成，含 rust-analyzer.toml），runner 已装（`.cargo/bin/rustlings.exe`），用户已加 PATH，watch 模式正常运行，共 94 题。命令：n 下一题 / h 提示 / l 列表 / c 全量检查 / x 重置 / q 退出。**move_semantics 六题已通过（第一课作业验收）**，用户进度至 05_vecs 之后的分类。
-- 学习记录归档规则（2026-10-19 用户拍板）：**一课一个聚类记录**，文件名对应课号（如 `0001-ownership-move-copy-drop.md`），课内多次追问按时间顺序追加小节，演进痕迹即价值；不再一条记录一个文件。截至 2026-10-21 已有 0001–0003 三份聚类。
+- 学习记录归档规则（2026-10-19 用户拍板）：**一课一个聚类记录**，文件名对应课号（如 `0001-ownership-move-copy-drop.md`），课内多次追问按时间顺序追加小节，演进痕迹即价值；不再一条记录一个文件。截至 2026-10-27 已有 0001–0007 七份聚类。
 - **学生笔记规则（2026-10-19 用户拍板）**：每课一份学生笔记，放 `my-notes/`，文件名对应课号（如 `my-notes/0001-ownership-and-move.md`）。用户的原始笔记是临时提问、缺逻辑性，由 AI 按主题重组通顺后再落盘；误区处标注"曾误→正解"，未决问题进队列，结尾附自查问题。已发布第一课整理版（覆盖所有权四连问、七条归纳、drop 三连问、编译期机制、rustlings 00~06 十一条）。
 - 学习进度：move_semantics 六题已通过（第一课作业验收），用户进度至 rustlings 06 之后的分类。第二课《借用与引用》已发布（lessons/0002-borrowing-and-references.html）。用户开放问题排队中：const 语义、区间半开理由（第三课）、闭包与迭代器（其后）。
 - 2026-10-20：第二课里程碑——课后任务三项全部完成（The Book 4.2/4.3 原文通读、WoL 项目 String→&str 重构就地完成并运行验证）；术语表晋升 4 词条（借用、不可变引用、可变引用、悬垂引用）；learning-records/0002 聚类与 my-notes/0002 整理落盘。批阅 8 条笔记：主体全对；两处精度问题（引用作用域到"最后一次使用"而非一次、排他管"作用域重叠"不管"前后脚"）；一处真误区（区间半开的设计原因被 first_word 用例带偏——三条真正理由用户第一课就写对过，第三课须形式化重锚）；iter() 产出引用而非元素本体（小精度）。用户独立重发现"排他=编译期互斥"的并发洞察（已补数据竞争 vs 同步的边界）。追问弧线后续闭合：move 变量模型、&str vs &String、NLL 完整操作化规则（用户自主综合，探针证实）、栈模型推断（反例击穿：非 LIFO 死亡、集合成员而非栈顶、真实机制是 MIR 区域数据流）。
@@ -58,6 +58,7 @@
 - 2026-10-22：第六课 CP2 通过。rustlings 10_modules modules1–3 全过，状态推进 hashmaps1；modules1 给 `make_sausage` 加 `pub`，modules2 用两条 `pub use ... as ...`，modules3 最初写成 `pub use std::time::{...}`，已纠正为 `use`——std 的项本来就公开，`use` 只引入名字，`pub use` 是重新导出。CP3 待交：WoL 拆 `src/protocol.rs`，`parse_mac` 私有，`build_magic_packet` / `print_hex` 公开。
 - 2026-10-22：第六课 CP3 通过并结课。WoL 拆成 `src/main.rs` + `src/protocol.rs`：main 只留 `mod protocol;`、`use protocol::{build_magic_packet, print_hex};`、`first_word` 与 `main`；protocol 里 `build_magic_packet` / `print_hex` 为 pub，`parse_mac` 与常量保持私有。`cargo fmt`、`cargo check` 通过，`cargo run` 仍输出 102 字节。产物：my-notes/0006、learning-records/0006（CP1–CP3）、术语表晋升 crate/module/visibility/use/pub use/package/workspace（语言核心 24 词条）、WoL README 第六课小节、LEARNER-PROFILE 同步。下一课：结构体与枚举（rustlings 07/08）。
 - 2026-10-22：第七课《结构体与枚举》发布（lessons/0007-structs-and-enums.html）——从按键数据模型切入；命名字段/元组/单元结构体、impl 与 `&self`/`&mut self`/`self`、关联函数 `new`/`Self`、枚举变体携带数据、match 穷尽（E0004）/`_`/if let；结构体字段 mut 的 E0594；固件按键状态与事件模型。预检：lesson-quiz-preflight 静态 0 error / 0 warning；浏览器正确 4/4、错误 0/4，锁题正常，控制台无错误。CP1 三条概念笔记；CP2 rustlings 07_structs + 08_enums 六题；CP3 demo/button-model 按键事件模型。下一课：Option 与错误处理。
+- 2026-10-27：第七课 CP1–CP3 全部通过并结课。CP1 三轮修正：元组结构体外层不是“一个元组”（`Pp(u8,u32,bool)` 是三个字段，`Pp((u8,u32,bool))` 才是一个元组字段）；字段全 Copy ≠ 结构体 Copy，整体赋值仍 move，`..base` 逐字段，`assert_eq!` 只借用；`Self` 是 impl 类型别名，`self` 是接收者。CP2 rustlings structs1–3、enums1–3 六题全过，状态下一题 hashmaps1；structs2 的 `..order_template` 解释通过（name 显式给出不移动 String；省略则部分移动）。CP3 `demo/button-model` 完成：`ButtonState` + `ButtonEvent` + `new`/`update`，`cargo run` 输出 pressed / held / released；理由：三个 bool 非法组合太多，enum 三选一 + match 穷尽更精确。产物：my-notes/0007、learning-records/0007、术语表晋升 13 词条（语言核心 37 词条）、demo/button-model/README、LEARNER-PROFILE 同步。下一课：Option 与错误处理。
 
 ## 待核实 / 后续事项
 

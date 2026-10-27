@@ -167,6 +167,84 @@
   <dd class="avoid">避免：隐式 return、最后一行</dd>
 </dl>
 
+<dl class="term">
+  <dt>结构体（struct）</dt>
+  <dd>把若干命名字段装进一个值的复合类型；实例同时拥有所有字段（AND）。用 <code>Type { field: value }</code> 构造，用 <code>.</code> 访问字段。元组结构体和单元结构体是另外两种形态。</dd>
+  <dd class="avoid">避免：类、对象（Rust 没有类继承）</dd>
+</dl>
+
+<dl class="term">
+  <dt>元组结构体（tuple struct）</dt>
+  <dd>有类型名、字段没有名字的结构体，如 <code>struct Pin(u8);</code>；字段按位置用 <code>.0</code> 访问。外层类型是 <code>Pin</code>，不是元组；常用作 newtype，给值一个独立的类型身份。</dd>
+  <dd class="avoid">避免：元组（元组匿名，元组结构体有名字）</dd>
+</dl>
+
+<dl class="term">
+  <dt>单元结构体（unit struct）</dt>
+  <dd>没有字段的命名类型，如 <code>struct Marker;</code>；零大小，只有一个值；用于标记、trait 实现、类型状态或给关联函数当命名空间。</dd>
+  <dd class="avoid">避免：空类型、无类型（它有一个值，只是没有字段）</dd>
+</dl>
+
+<dl class="term">
+  <dt>枚举（enum）</dt>
+  <dd>一个值只能是若干变体之一的和类型；每个变体可以携带不同的数据。用 <code>match</code> 解构，编译器检查穷尽。</dd>
+  <dd class="avoid">避免：C 的 enum（只是整数常量）、union（不是和类型）</dd>
+</dl>
+
+<dl class="term">
+  <dt>变体（variant）</dt>
+  <dd>枚举的一个具名分支 / tag / 构造器，如 <code>Pressed</code>；变体不是类型，也不是变量；一个值只能属于其中一个变体。</dd>
+  <dd class="avoid">避免：类型、变量（变体是 tag/构造器）</dd>
+</dl>
+
+<dl class="term">
+  <dt>变体形态（variant shape）</dt>
+  <dd>变体负载的三种写法：单元变体（无负载）、元组变体（位置字段）、结构体变体（命名字段）。形态决定负载怎么写，不决定是哪个变体；同一个 enum 可以混用。</dd>
+  <dd class="avoid">避免：变体种类（形态与变体名是两条轴）</dd>
+</dl>
+
+<dl class="term">
+  <dt>判别值（tag / discriminant）</dt>
+  <dd>编译器为每个变体保存的隐藏身份，决定 <code>match</code> 走哪个分支；不是字段，也不是 payload。无字段 enum 可用整数判别值并用 <code>as</code> 读取；带数据的 enum 用 <code>std::mem::discriminant</code> 比较。</dd>
+  <dd class="avoid">避免：字段、负载（判别值不是 payload）</dd>
+</dl>
+
+<dl class="term">
+  <dt>负载（payload）</dt>
+  <dd>变体携带的数据；元组变体是位置字段，结构体变体是命名字段，单元变体没有负载。负载和 tag 一起构成枚举值。</dd>
+  <dd class="avoid">避免：参数（变体字段不是函数参数）</dd>
+</dl>
+
+<dl class="term">
+  <dt>部分移动（partial move）</dt>
+  <dd>把结构体或枚举中的非 Copy 字段移走后，整个值不能再整体使用，但未移走的字段仍可访问；错误 E0382。常见于 <code>..base</code> 更新语法。</dd>
+  <dd class="avoid">避免：整体移动（只有部分字段被移走）</dd>
+</dl>
+
+<dl class="term">
+  <dt>方法（method）</dt>
+  <dd><code>impl</code> 中第一个参数是 <code>self</code> / <code>&amp;self</code> / <code>&amp;mut self</code> 的函数；用 <code>instance.method()</code> 调用。签名决定只读、可写还是取得所有权。</dd>
+  <dd class="avoid">避免：函数（方法有接收者）</dd>
+</dl>
+
+<dl class="term">
+  <dt>关联函数（associated function）</dt>
+  <dd><code>impl</code> 中没有 <code>self</code> 的函数；用 <code>Type::func()</code> 调用。构造器常命名为 <code>new</code>，但 <code>new</code> 只是命名习惯，不是关键字。</dd>
+  <dd class="avoid">避免：方法（关联函数没有 self）</dd>
+</dl>
+
+<dl class="term">
+  <dt>Self（实现类型别名）</dt>
+  <dd><code>impl</code> 后类型的别名：<code>impl ButtonState</code> 中 <code>Self</code> 就是 <code>ButtonState</code>；用于返回类型和构造。它是类型，不是值，不随调用者变化；小写 <code>self</code> 才是接收者值。</dd>
+  <dd class="avoid">避免：self（大小写不同：类型 vs 接收者）</dd>
+</dl>
+
+<dl class="term">
+  <dt>模式匹配（match）</dt>
+  <dd>按模式检查值、解构负载并绑定变量的表达式；编译期检查穷尽，漏变体报 E0004。<code>_</code> 是通配符；<code>if let</code> 只匹配一个模式，不要求穷尽。</dd>
+  <dd class="avoid">避免：switch（Rust 不贯穿且强制穷尽）</dd>
+</dl>
+
 <h2>嵌入式与硬件</h2>
 
 <dl class="term">
