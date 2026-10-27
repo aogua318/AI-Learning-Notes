@@ -16,6 +16,10 @@
   模块树、默认私有、crate/self/super 路径、use/as/pub use、文件模块的原文出处。用途：第六课主教材；rustlings 10_modules 配套。
 - [The Rust Book 5.1 Defining Structs](https://doc.rust-lang.org/book/ch05-01-defining-structs.html) / [5.3 Method Syntax](https://doc.rust-lang.org/book/ch05-03-method-syntax.html) / [6.1 Defining an Enum](https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html) / [6.2 match](https://doc.rust-lang.org/book/ch06-02-match.html) / [6.3 if let](https://doc.rust-lang.org/book/ch06-03-if-let.html) ✅
   结构体三种形态、impl 与 self 签名、枚举变体携带数据、match 穷尽与 if let 的原文出处。用途：第七课主教材；rustlings 07_structs / 08_enums 配套。
+- [The Rust Book 9.2 Recoverable Errors with Result](https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html) / [9.3 To panic! or Not to panic!](https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html) ✅
+  Result/Ok/Err、unwrap/expect、`?` 传播与 From 转换、main 返回 Result、panic 与 Result 的选择判据。用途：第八课主教材；rustlings 12_options / 13_error_handling 配套。第九课 trait 与泛型会回收 `From` / `Debug` 约束。
+- [std::option::Option](https://doc.rust-lang.org/std/option/enum.Option.html) / [std::result::Result](https://doc.rust-lang.org/std/result/enum.Result.html) / [Rust Reference: `?` operator](https://doc.rust-lang.org/reference/expressions/operator-expr.html#the-question-mark-operator) ✅
+  Option/Result 的方法签名（重点看接收者是 self 还是 &self）与 `?` 的规范定义。用途：第八课查表与 CP1 原文核对。
 - [Rustlings（rust-lang 官方练习，MIT）](https://github.com/rust-lang/rustlings) ✅
   小型练习集，编译错误即反馈。用途：与 The Book 同步刷，move_semantics 系列练习是第一课的直接配套。
 - [rp2040-hal API 文档（docs.rs）](https://docs.rs/rp2040-hal/latest/rp2040_hal/) ✅

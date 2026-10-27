@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第八课：Option 与错误处理 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0008</span>
+  <span>预计 15–20 分钟</span>
+  <span>前置：第七课 CP1–CP3 完成</span>
+  <span>阶段：语言预备期（第 8 课）</span>
+</div>
+
+<h1>第八课：Option 与错误处理——把缺失和失败写进类型</h1>
+
+<div class="callout teacher">
+  <b>第七课已结课：</b><code>button-model</code> 能输出 pressed / held / released。第七课留下两个尾巴：<br>
+  ① <code>update</code> 在 false/false 时只能硬塞一个 <code>Held</code>；<br>
+  ② <code>parse_mac</code> 用 <code>unwrap_or(0)</code> 把坏 MAC 静默变成 0。<br>
+  今天用标准库的两个枚举收口：<b><code>Option&lt;T&gt;</code></b> 表示“可能有、可能没有”，<b><code>Result&lt;T, E&gt;</code></b> 表示“成功、或者失败并带原因”，<b><code>?</code></b> 把错误向上传。<br>
+  C 锚点：<code>Option</code> ≈ 一个必须检查的 tag + 值；<code>Result</code> ≈ 返回码 + 错误值——区别是编译器强制你处理。
+</div>
+
+<p class="meta">本课示例均用 rustc 1.99.1（edition 2021）实测；英文原文与报错附中文对照。</p>
+
+<h2>1. Option：把“没有”写进类型</h2>
+
+<p>第七课已经见过它：标准库里的 <code>Option</code> 就是一个枚举。</p>
+
+<pre><code>enum Option&lt;T&gt; {
+    None,
+    Some(T),
+}</code></pre>
+
+<p><code>T</code> 是类型参数（type parameter），先把它理解成“占位符”：<code>Option&lt;u8&gt;</code> 里的 <code>T</code> 是 <code>u8</code>，<code>Option&lt;ButtonEvent&gt;</code> 里的 <code>T</code> 是 <code>ButtonEvent</code>。泛型课会正式展开。今天只要会读这两种写法。</p>
+
+<p><code>Option</code> 的值只有两种：<code>Some(值)</code> 或 <code>None</code>。它不是空指针；<code>None</code> 是一个正常的枚举值，必须用 <code>match</code>、<code>if let</code> 或方法处理。</p>
+
+<h3>1.1 把 button-model 的 false/false 收口</h3>
+
+<p>第七课的 <code>update</code> 返回 <code>ButtonEvent</code>，所以“没有事件”时只能返回一个勉强的 <code>Held</code>。把返回类型改成 <code>Option&lt;ButtonEvent&gt;</code>，没有事件就返回 <code>None</code>：</p>
+
+<pre><code>#[derive(Debug)]
+struct ButtonState {
+    pin: u8,
+    pressed: bool,
+}
+
+#[derive(Debug)]
+enum ButtonEvent {
+    Pressed { pin: u8 },
+    Released { pin: u8 },
+    Held { pin: u8, ms: u32 },
+}
+
+impl ButtonState {
+    fn new(pin: u8) -&gt; Self {
+        Self {
+            pin,
+            pressed: false,
+        }
+    }
+
+    fn update(&amp;mut self, pressed: bool, ms: u32) -&gt; Option&lt;ButtonEvent&gt; {
+        if pressed &amp;&amp; !self.pressed {
+            self.pressed = true;
+            Some(ButtonEvent::Pressed { pin: self.pin })
+        } else if !pressed &amp;&amp; self.pressed {
+            self.pressed = false;
+            Some(ButtonEvent::Released { pin: self.pin })
+        } else if pressed {
+            Some(ButtonEvent::Held { pin: self.pin, ms })
+        } else {
+            None
+        }
+    }
+}</code></pre>
+
+<pre><code>fn main() {
+    let mut button = ButtonState::new(15);
+
+    for (pressed, ms) in [(false, 10), (true, 20), (true, 30), (false, 40)] {
+        match button.update(pressed, ms) {
+            Some(ButtonEvent::Pressed { pin }) =&gt; println!("pressed {pin}"),
+            Some(ButtonEvent::Released { pin }) =&gt; println!("released {pin}"),
+            Some(ButtonEvent::Held { pin, ms }) =&gt; println!("held {pin} {ms} ms"),
+            None =&gt; println!("no event"),
+        }
+    }
+}</code></pre>
+
+<p>输出：</p>
+
+<pre><code>no event
+pressed 15
+held 15 30 ms
+released 15</code></pre>
+
+<ul>
+  <li>false/false 不再伪装成 <code>Held</code>：没有事件就是 <code>None</code>。这是对第七课简化的正式收口。</li>
+  <li><code>match</code> 的模式可以<b>嵌套</b>：外层 <code>Some</code> 剥掉 <code>Option</code>，内层 <code>ButtonEvent::Pressed { pin }</code> 读枚举 tag 并绑定字段。</li>
+  <li>返回类型变成 <code>Option&lt;ButtonEvent&gt;</code> 后，调用者必须处理 <code>None</code>；漏掉就是 E0004（非穷尽模式）。把“可能没有”写进类型，编译器就会替你检查。</li>
+</ul>
+
+<div class="callout">
+  <b>类型链：</b><code>button.update(true, 20)</code> → <code>Option&lt;ButtonEvent&gt;</code> → 本刻返回 <code>Some(ButtonEvent::Held { pin: 15, ms: 20 })</code>。函数签名先告诉你“可能没有”，再让你决定怎么处理。
+</div>
+
+<h3>1.2 if let、while let 与嵌套 Option</h3>
+
+<p>接着上面的 <code>button</code>：</p>
+
+<pre><code>let event = button.update(true, 10);
+if let Some(ButtonEvent::Pressed { pin }) = event {
+    println!("pressed {pin}");
+}
+
+let mut stack = vec![1, 2, 3];
+while let Some(top) = stack.pop() {
+    println!("{top}");
+}</code></pre>
+
+<ul>
+  <li><code>if let</code> 只关心一个模式；没有 <code>else</code> 时，其余情况直接跳过，不要求穷尽。</li>
+  <li><code>while let</code> 在模式不再匹配时结束循环。<code>Vec::pop()</code> 返回 <code>Option&lt;T&gt;</code>：空 <code>Vec</code> 返回 <code>None</code>。</li>
+</ul>
+
+<p>嵌套 Option 需要嵌套模式。下面这个 <code>Vec</code> 的元素本身就是 <code>Option&lt;i8&gt;</code>：</p>
+
+<pre><code>let mut items: Vec&lt;Option&lt;i8&gt;&gt; = vec![Some(1), None, Some(3)];
+
+while let Some(Some(n)) = items.pop() {
+    println!("n = {n}");
+}</code></pre>
+
+<p>输出只有一行 <code>n = 3</code>。因为 <code>items.pop()</code> 的返回类型是 <code>Option&lt;Option&lt;i8&gt;&gt;</code>：外层表示 <code>Vec</code> 空没空，内层表示元素本身是不是 <code>None</code>。模式里的 <code>Some</code> 层数要和类型层数对上；遇到 <code>None</code> 元素时模式不匹配，循环就停，后面的 <code>Some(1)</code> 不会被处理。</p>
+
+<h3>1.3 常用方法：先看接收者</h3>
+
+<table>
+  <tr><th>方法</th><th>接收者</th><th><code>None</code> 时</th><th>用途</th></tr>
+  <tr><td><code>map(f)</code></td><td><code>self</code></td><td><code>None</code></td><td><code>Some(x)</code> → <code>Some(f(x))</code>，只转换内部值</td></tr>
+  <tr><td><code>unwrap_or(d)</code></td><td><code>self</code></td><td>返回 <code>d</code></td><td>给默认值，不 panic</td></tr>
+  <tr><td><code>ok_or(e)</code></td><td><code>self</code></td><td><code>Err(e)</code></td><td>转成 <code>Result</code>，补一个错误值</td></tr>
+  <tr><td><code>as_ref()</code></td><td><code>&amp;self</code></td><td><code>None</code></td><td>借用内部值，不移动原 <code>Option</code></td></tr>
+  <tr><td><code>unwrap()</code></td><td><code>self</code></td><td><b>panic</b></td><td>只在确定有值时用（下一节）</td></tr>
+</table>
+
+<pre><code>let n: Option&lt;u8&gt; = Some(7);
+println!("{:?}", n.map(|v| v + 1));   // Some(8)
+println!("{}", n.unwrap_or(0));       // 7
+
+let missing: Option&lt;u8&gt; = None;
+println!("{}", missing.unwrap_or(0)); // 0
+
+let as_result: Result&lt;u8, &amp;str&gt; = missing.ok_or("missing");
+println!("{as_result:?}");            // Err("missing")</code></pre>
+
+<p>注意接收者：<code>map</code> / <code>unwrap_or</code> / <code>ok_or</code> / <code>unwrap</code> 都按值拿 <code>self</code>，会消耗 <code>Option</code>；<code>as_ref</code> 只借用。第七课的口诀继续有效：<b>先看 <code>self</code> 签名，再问会不会 move</b>。</p>
+
+<h2>2. Result：把“失败原因”写进类型</h2>
+
+<p><code>Option</code> 能说“没有”，但说不出“为什么没有”。解析 MAC 失败可能是长度不对，也可能是某一段不是十六进制；这两种情况调用者要分别处理，就用 <code>Result&lt;T, E&gt;</code>。</p>
+
+<pre><code>enum Result&lt;T, E&gt; {
+    Ok(T),
+    Err(E),
+}</code></pre>
+
+<pre><code>fn main() {
+    let good = "FF".parse::&lt;u8&gt;();
+    let bad = "ZZ".parse::&lt;u8&gt;();
+    println!("{good:?}");
+    println!("{bad:?}");
+}</code></pre>
+
+<p>输出：</p>
+
+<pre><code>Ok(255)
+Err(ParseIntError { kind: InvalidDigit })</code></pre>
+
+<p><code>"FF".parse::&lt;u8&gt;()</code> 的返回类型是 <code>Result&lt;u8, ParseIntError&gt;</code>。失败不是异常，是一个装着错误值的普通返回值；<code>ParseIntError</code> 是标准库的错误类型，现在用 <code>{:?}</code> 打印即可。</p>
+
+<pre><code>match "FF".parse::&lt;u8&gt;() {
+    Ok(v) =&gt; println!("ok {v}"),
+    Err(e) =&gt; println!("bad hex: {e}"),
+}</code></pre>
+
+<h3>2.1 自定义错误：MacError</h3>
+
+<p>错误原因有限、互斥时，最适合用枚举表示：</p>
+
+<pre><code>#[derive(Debug)]
+pub enum MacError {
+    Length,
+    NonHex,
+}
+
+fn parse_mac(mac: &amp;str) -&gt; Result&lt;[u8; 6], MacError&gt; {
+    let parts: Vec&lt;&amp;str&gt; = mac.split('-').collect();
+    if parts.len() != 6 {
+        return Err(MacError::Length);
+    }
+
+    let mut bytes = [0u8; 6];
+    for (i, part) in parts.iter().enumerate() {
+        bytes[i] = u8::from_str_radix(part, 16)
+            .map_err(|_| MacError::NonHex)?;
+    }
+    Ok(bytes)
+}</code></pre>
+
+<ul>
+  <li><code>MacError</code> 只有两种原因：段数不对（<code>Length</code>）、某段不是十六进制（<code>NonHex</code>）。“原因有限且互斥”正是 enum 的主场。</li>
+  <li><code>#[derive(Debug)]</code> 让错误能打印；<code>main</code> 返回 <code>Result</code> 时也要求错误类型实现 <code>Debug</code>（后面会看到）。</li>
+  <li><code>map_err(|_| MacError::NonHex)</code> 只改错误，不改成功值：<code>Result&lt;u8, ParseIntError&gt;</code> → <code>Result&lt;u8, MacError&gt;</code>。</li>
+  <li>末尾的 <code>?</code> 把 <code>Err(MacError::NonHex)</code> 提前返回；成功则把 <code>u8</code> 赋给 <code>bytes[i]</code>。</li>
+</ul>
+
+<table>
+  <tr><th>类型</th><th>回答的问题</th><th>成功</th><th>失败 / 缺失</th><th>典型场景</th></tr>
+  <tr><td><code>Option&lt;T&gt;</code></td><td>有没有值？</td><td><code>Some(T)</code></td><td><code>None</code>（没有原因）</td><td>查找、<code>pop</code>、空切片 <code>first()</code></td></tr>
+  <tr><td><code>Result&lt;T, E&gt;</code></td><td>成功还是失败？为什么？</td><td><code>Ok(T)</code></td><td><code>Err(E)</code>（带原因）</td><td>解析、I/O（输入输出）、校验</td></tr>
+</table>
+
+<p>两者可以互相转换：<code>Option::ok_or</code> / <code>ok_or_else</code> 把 <code>None</code> 补成 <code>Err</code>；<code>Result::ok()</code> 丢弃错误信息，变成 <code>Option</code>。</p>
+
+<h2>3. unwrap / expect：panic 的边界</h2>
+
+<p><code>unwrap</code> / <code>expect</code> 是“我确定它成功”的断言；失败时 <b>panic</b>（运行期），不是编译错误。</p>
+
+<pre><code>let n: Option&lt;u8&gt; = None;
+println!("{}", n.unwrap());</code></pre>
+
+<pre><code>thread 'main' panicked at src/main.rs:3:22:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</code></pre>
+
+<p>中文对照：在 <code>None</code> 值上调用了 <code>Option::unwrap()</code>；程序以退出码 101 结束。<code>expect("...")</code> 的 panic 消息会换成你给的文字，方便定位。</p>
+
+<ul>
+  <li><b>可以用：</b>测试、示例、原型；或值由代码自己保证（例如硬编码常量），并用 <code>expect</code> 写清理由。</li>
+  <li><b>不要用：</b>外部输入（用户、网络、文件、命令行参数）。这些失败是可预期的，应该返回 <code>Result</code>，让调用者决定重试、报错还是忽略。</li>
+  <li>Book 9.3 的判据：坏状态是“意外”的，且继续运行不安全时 panic；能预期、能恢复的失败，返回 <code>Result</code>。</li>
+  <li>固件里更要谨慎：<code>no_std</code> 程序的 panic 通常直接停机；协议解析失败应交给上层处理。</li>
+</ul>
+
+<p>旧版 <code>parse_mac</code> 的问题不是 panic，而是<b>静默吞错</b>：</p>
+
+<pre><code>// 旧版：解析失败时给 0
+let b = u8::from_str_radix(part, 16).unwrap_or(0);</code></pre>
+
+<p><code>unwrap_or(0)</code> 不 panic，但会把坏输入变成合法字节 <code>0x00</code>；魔术包照样 102 字节，看起来成功，实际 MAC 错了。静默错误比 panic 更难查，这正是要改成 <code>Result</code> 的原因。</p>
+
+<p>另外，<code>unwrap</code> 的接收者是 <code>self</code>，会移动原 <code>Option</code>：</p>
+
+<pre><code>let name = Some(String::from("Ada"));
+let n = name.unwrap();
+println!("{n}");
+// println!("{name:?}"); // 取消注释会报 E0382</code></pre>
+
+<pre><code>error[E0382]: borrow of moved value: `name`
+note: `std::option::Option::&lt;T&gt;::unwrap` takes ownership of the receiver `self`, which moves `name`</code></pre>
+
+<p>中文对照：借用已移动的值；<code>unwrap</code> 取得接收者 <code>self</code> 的所有权，<code>name</code> 被移走。需要保留原 <code>Option</code> 时写 <code>name.as_ref().unwrap()</code>：<code>as_ref</code> 只借用，得到 <code>Option&lt;&amp;String&gt;</code>。</p>
+
+<h2>4. ?：错误的早退</h2>
+
+<p>把错误一层层往上交，<code>match</code> 会写得很啰嗦；<code>?</code> 是它的简写：</p>
+
+<pre><code>fn parse_port(s: &amp;str) -&gt; Result&lt;u16, std::num::ParseIntError&gt; {
+    let port = s.parse::&lt;u16&gt;()?;
+    Ok(port)
+}
+
+fn main() {
+    println!("{:?}", parse_port("8080"));
+    println!("{:?}", parse_port("http"));
+}</code></pre>
+
+<p>输出：</p>
+
+<pre><code>Ok(8080)
+Err(ParseIntError { kind: InvalidDigit })</code></pre>
+
+<p><code>?</code> 放在 <code>Result</code> 后面：<code>Ok(v)</code> 取出 <code>v</code> 继续；<code>Err(e)</code> 立刻从当前函数返回 <code>Err(e)</code>。它大致展开成：</p>
+
+<pre><code>let port = match s.parse::&lt;u16&gt;() {
+    Ok(v) =&gt; v,
+    Err(e) =&gt; return Err(e),
+};</code></pre>
+
+<p>更准确地说，返回的是 <code>Err(From::from(e))</code>：函数错误类型与表达式错误类型不同时，<code>?</code> 会用 <code>From</code> 自动转换。上一节的 <code>MacError</code> 还没实现 <code>From&lt;ParseIntError&gt;</code>，所以先用 <code>map_err</code> 手动转好；trait 课会讲怎么自己实现 <code>From</code>。</p>
+
+<p><code>?</code> 对 <code>Option</code> 也适用：<code>Some(v)</code> 取出 <code>v</code>，<code>None</code> 直接 <code>return None</code>；但它只能用在返回 <code>Option</code> 的函数里。</p>
+
+<div class="callout warn">
+  <b>返回类型必须匹配。</b>在返回 <code>()</code> 的函数里用 <code>?</code>：<br>
+  <code>error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)</code><br>
+  中文对照：错误[E0277]：<code>?</code> 运算符只能用在返回 <code>Result</code> 或 <code>Option</code>（或其他实现 <code>FromResidual</code> 的类型）的函数里。<br><br>
+  在返回 <code>Result</code> 的函数里对 <code>Option</code> 用 <code>?</code>：<br>
+  <code>error[E0277]: the `?` operator can only be used on `Result`s, not `Option`s, in a function that returns `Result`</code><br>
+  中文对照：在返回 <code>Result</code> 的函数里，<code>?</code> 只能用于 <code>Result</code>，不能用于 <code>Option</code>。编译器提示用 <code>.ok_or(...)?</code> 补一个错误值，转成 <code>Result</code>。
+</div>
+
+<p>反过来，返回 <code>Option</code> 的函数里对 <code>Result</code> 用 <code>?</code>，同样报 E0277；可以用 <code>.ok()?</code>，但错误原因会被丢掉。</p>
+
+<h3>4.1 main 也可以返回 Result</h3>
+
+<p><code>build_magic_packet</code> 在下一节改造，这里先看 <code>main</code> 的返回类型：</p>
+
+<pre><code>fn main() -&gt; Result&lt;(), MacError&gt; {
+    let packet = build_magic_packet("AA-BB-CC-DD-EE-FF")?;
+    println!("packet len = {}", packet.len());
+    Ok(())
+}</code></pre>
+
+<ul>
+  <li>成功时要写 <code>Ok(())</code>；失败时 <code>Err(e)</code> 会打印 <code>Error: {e:?}</code>（Debug 格式），并以非 0 退出码结束。</li>
+  <li>错误类型必须实现 <code>Debug</code>；否则 <code>Result&lt;(), E&gt;</code> 不满足 <code>Termination</code>，报 E0277：</li>
+</ul>
+
+<pre><code>error[E0277]: `MacError` doesn't implement `Debug`
+note: required for `Result&lt;(), MacError&gt;` to implement `Termination`</code></pre>
+
+<p>中文对照：<code>MacError</code> 未实现 <code>Debug</code>；<code>main</code> 的返回类型需要实现 <code>Termination</code>（程序入口的终止协议 trait），而 <code>Result&lt;(), E&gt;</code> 只有在 <code>E: Debug</code> 时才实现它。</p>
+
+<div class="callout">
+  <b>编译期 vs 运行期：</b><code>?</code> 的展开、返回类型检查、<code>From</code> 约束都在编译期；真正走 <code>Ok</code> 还是 <code>Err</code>、打印什么错误、退出码是多少，在运行期。它不是异常，也不会栈展开。
+</div>
+
+<h2>5. 固件视角：WoL 的 parse_mac 不再吞错</h2>
+
+<p>把本课学的东西落到 WoL 项目上。改造前后：</p>
+
+<table>
+  <tr><th>位置</th><th>旧版</th><th>新版</th></tr>
+  <tr><td><code>parse_mac</code> 返回</td><td><code>Vec&lt;u8&gt;</code></td><td><code>Result&lt;[u8; 6], MacError&gt;</code></td></tr>
+  <tr><td>坏输入</td><td><code>unwrap_or(0)</code>，静默变成 0</td><td><code>Err(Length)</code> / <code>Err(NonHex)</code></td></tr>
+  <tr><td><code>build_magic_packet</code></td><td>直接返回 <code>[u8; 102]</code></td><td><code>Result&lt;[u8; 102], MacError&gt;</code>，内部用 <code>?</code></td></tr>
+  <tr><td><code>main</code></td><td>无返回值</td><td><code>Result&lt;(), MacError&gt;</code>，用 <code>?</code></td></tr>
+</table>
+
+<pre><code>pub fn build_magic_packet(mac: &amp;str) -&gt; Result&lt;[u8; PACKET_LEN], MacError&gt; {
+    let mac_bytes = parse_mac(mac)?;
+    // ... 其余填包逻辑不变 ...
+    Ok(packet)
+}</code></pre>
+
+<p>其余填包逻辑不变：只在开头用 <code>?</code> 拿到 6 个字节，末尾用 <code>Ok(packet)</code> 包起来。错误会沿着 <code>parse_mac</code> → <code>build_magic_packet</code> → <code>main</code> 一路往上，直到有人决定怎么处理。</p>
+
+<div class="callout warn">
+  <b>错误类型也要可见。</b><code>build_magic_packet</code> 是公开函数，<code>MacError</code> 出现在它的返回类型里，所以 <code>MacError</code> 必须也是 <code>pub</code>。否则编译器报 <code>type `MacError` is private</code>（类型 `MacError` 是私有的），或给出 <code>private_interfaces</code> 警告（私有类型出现在公开接口里）。这是第六课可见性规则的延续：公开 API 里出现的类型，至少要一样公开。
+</div>
+
+<p>正常运行（MAC 正确）：</p>
+
+<pre><code>$ cargo run
+目标 MAC：AA-BB-CC-DD-EE-FF
+FF FF FF FF FF FF AA BB CC DD EE FF ...
+（共 102 字节）</code></pre>
+
+<p>把 MAC 改成 <code>AA-BB-CC-DD-EE</code>：</p>
+
+<pre><code>$ cargo run
+Error: Length
+# 退出码 1</code></pre>
+
+<p>改成 <code>AA-BB-CC-DD-EE-ZZ</code> 会得到 <code>Error: NonHex</code>。两种错误都由调用者决定怎么处理，解析函数本身不 panic。</p>
+
+<ul>
+  <li><code>Result</code> 定义在 <code>core</code> 里，<code>no_std</code> 固件也能用；<code>MacError</code> 这种小 enum 不占堆。</li>
+  <li>固件里 panic 通常直接停机，所以协议解析一律返回 <code>Result</code>，让上层决定重试还是上报。</li>
+  <li>还有一处遗留：<code>parse_mac</code> 里的 <code>Vec&lt;&amp;str&gt;</code> 需要堆分配。PC 端 CLI 没问题；固件版要改成无分配写法（例如先数 <code>split('-')</code> 的段数，再逐段填数组），留到固件课。</li>
+</ul>
+
+<h2>6. 互动练习</h2>
+
+<p>四段代码，判断每段是<b>编译错误</b>还是<b>正常运行</b>。全部答完看总分。</p>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <div class="quiz-code">fn parse(s: &amp;str) -&gt; Result&lt;u8, std::num::ParseIntError&gt; {
+    let n = s.parse::&lt;u8&gt;()?;
+    Ok(n + 1)
+}
+
+fn main() {
+    println!("{:?}", parse("41"));
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">fn first(v: &amp;[u8]) -&gt; Result&lt;u8, String&gt; {
+    let x = v.first()?;
+    Ok(*x)
+}
+
+fn main() {
+    println!("{:?}", first(&amp;[1, 2]));
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <div class="quiz-code">#[derive(Debug)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let optional_point = Some(Point { x: 100, y: 200 });
+
+    match &amp;optional_point {
+        Some(p) =&gt; println!("Coordinates are {},{}", p.x, p.y),
+        None =&gt; println!("none"),
+    }
+
+    println!("{optional_point:?}");
+}</div>
+  <div class="quiz-options">
+    <button data-choice="ok">正常运行</button>
+    <button data-choice="err">编译错误</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">fn main() {
+    let name = Some(String::from("Ada"));
+    let n = name.unwrap();
+    println!("{n} {name:?}");
+}</div>
+  <div class="quiz-options">
+    <button data-choice="err">编译错误</button>
+    <button data-choice="ok">正常运行</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 4</p>
+
+<h2>7. 课后任务（按 checkpoint 交）</h2>
+
+<p>三项任务有依赖，按顺序做，一次交一项；没有代码和运行输出，不算完成。</p>
+
+<table>
+  <tr><th>checkpoint</th><th>对应课节</th><th>交付物</th><th>验收证据</th></tr>
+  <tr>
+    <td><b>CP1</b></td>
+    <td>第 1–4 节 + The Book 9.2 / 9.3（Option 复习可回看 6.1）</td>
+    <td>三条编号笔记：<br>
+      ① <code>Option</code> 和 <code>Result</code> 各回答什么问题；<code>ok_or</code> 怎么把 <code>Option</code> 转成 <code>Result</code>；各附一个最小代码片段。<br>
+      ② <code>unwrap</code> / <code>expect</code> 什么时候可以用、什么时候必须返回 <code>Result</code>；panic 和 <code>return Err</code> 的区别。<br>
+      ③ <code>?</code> 展开成什么；为什么返回类型必须匹配；<code>Option</code> 和 <code>Result</code> 为什么不能混用。</td>
+    <td>用自己的话，每条 2–4 句；至少附一个最小代码片段</td>
+  </tr>
+  <tr>
+    <td><b>CP2</b></td>
+    <td>第 1–4 节 + rustlings <code>12_options</code> / <code>13_error_handling</code></td>
+    <td>完成 rustlings <code>options1–3</code> 与 <code>errors1–3</code>。当前 runner 在 <code>hashmaps1</code>；<code>hashmaps1–3</code> 先跳过（集合与 <code>HashMap</code> 还没正式学），用 <code>rustlings run options1</code> 这种指定题目的方式做。</td>
+    <td>六题通过（贴出 <code>rustlings run options1</code> 等命令的通过输出即可）；runner 可能仍停在 <code>hashmaps1</code>，属正常，集合课再补；用 2–3 句解释一处 <code>?</code> 传播，或一处 <code>Option</code> → <code>Result</code> 的改动</td>
+  </tr>
+  <tr>
+    <td><b>CP3</b></td>
+    <td>第 2、5 节</td>
+    <td><b>A. button-model 收口：</b>把 <code>update</code> 的返回类型改成 <code>Option&lt;ButtonEvent&gt;</code>，false/false 返回 <code>None</code>；main 增加一次 false/false 采样，打印 <code>no event</code>。<br>
+      <b>B. WoL 错误处理：</b>在 <code>protocol.rs</code> 加 <code>pub enum MacError { Length, NonHex }</code>；<code>parse_mac</code> 返回 <code>Result&lt;[u8; 6], MacError&gt;</code>；<code>build_magic_packet</code> 返回 <code>Result&lt;[u8; PACKET_LEN], MacError&gt;</code> 并在内部用 <code>?</code>；<code>main</code> 改成 <code>fn main() -&gt; Result&lt;(), MacError&gt;</code>。</td>
+    <td>代码 + 两组运行输出：① <code>cargo run</code> 正常输出 102 字节；② 暂时把 MAC 改成 <code>AA-BB-CC-DD-EE</code> 或 <code>AA-BB-CC-DD-EE-ZZ</code>，输出 <code>Error: Length</code> 或 <code>Error: NonHex</code>，退出码非 0；③ button-model 输出含 <code>no event</code> / <code>pressed</code> / <code>held</code> / <code>released</code>。再附一句话：为什么 protocol 里不用 <code>unwrap</code>。</td>
+  </tr>
+</table>
+
+<p>加餐（不占 checkpoint）：把 CP1 笔记里的一个 <code>unwrap</code> 改成 <code>expect("...")</code>，运行到失败分支，比较两条 panic 消息；或者预习 trait 课，尝试给 <code>MacError</code> 实现 <code>From&lt;ParseIntError&gt;</code>，让 <code>?</code> 自动转换、去掉 <code>map_err</code>。</p>
+
+<h2>8. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议按顺序读）：<br>
+<a href="https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html" target="_blank">The Rust Book 9.2: Recoverable Errors with Result</a>（本课主教材：Result、unwrap/expect、<code>?</code>、main 返回 Result）<br>
+<a href="https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html" target="_blank">The Rust Book 6.1: Defining an Enum</a>（Option 的出处，复习）<br>
+<a href="https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html" target="_blank">The Rust Book 9.3: To panic! or Not to panic!</a>（panic 与 Result 的边界）<br>
+<a href="https://doc.rust-lang.org/std/option/enum.Option.html" target="_blank">std::option::Option</a> · <a href="https://doc.rust-lang.org/std/result/enum.Result.html" target="_blank">std::result::Result</a>（方法签名查表：先看接收者是 <code>self</code> 还是 <code>&amp;self</code>）<br>
+<a href="https://doc.rust-lang.org/reference/expressions/operator-expr.html#the-question-mark-operator" target="_blank">Rust Reference: The question mark operator</a>（<code>?</code> 的规范定义）</p>
+
+<p><b>下一课预告</b>：trait 与泛型——把今天见到的 <code>Option&lt;T&gt;</code>、<code>Result&lt;T, E&gt;</code>、<code>From</code>、<code>Debug</code> 里的 <code>&lt;T&gt;</code> 和 trait 约束正式讲清楚；closure 的 <code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code> 细节也放在那里。rustlings 的 <code>errors4–6</code>（自定义错误、<code>Box&lt;dyn Error&gt;</code>）会顺着那条线补完。</p>
+
+<p><b>随时提问</b>：<code>Option</code> 和 <code>Result</code> 怎么选、<code>?</code> 为什么不能混用、<code>unwrap</code> 到底能不能用——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0007-structs-and-enums.html">第七课：结构体与枚举</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../demo/wol/README.md">WoL 项目</a> · <a href="../demo/button-model/README.md">button-model</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构同前七课：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice="ok" 表示该选项是"正常运行"，
+   data-choice="err" 表示"编译错误"。
+   ============================================================ */
+
+var QUIZ_ANSWERS = [
+  {
+    correct: "ok",
+    okMsg: "对。parse(\"41\") 返回 Ok(41)，? 取出 41，函数返回 Ok(42)；main 打印 Ok(42)。",
+    errMsg: "不对。? 用在返回 Result 的函数里，parse 成功时取出 41；这段能编译并打印 Ok(42)。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。v.first() 返回 Option<&u8>，但函数返回 Result；? 不能混用，报 E0277。应写成 v.first().ok_or(\"empty\")?。",
+    errMsg: "不对。? 只能传播与函数返回类型同族的残余类型；Option 不能直接用在返回 Result 的函数里，报 E0277。"
+  },
+  {
+    correct: "ok",
+    okMsg: "对。match &optional_point 只借用，p 是 &Point；match 结束后 optional_point 仍可用，打印 Some(Point { x: 100, y: 200 })。",
+    errMsg: "不对。match &optional_point 借用而非移动，这段能编译并打印两行。"
+  },
+  {
+    correct: "err",
+    okMsg: "对。unwrap(self) 取得 Option<String> 的所有权，name 被移走；之后再借用 name 报 E0382。需要保留时用 as_ref().unwrap()。",
+    errMsg: "不对。unwrap 的接收者是 self，会移动 name；之后再打印 name 报 E0382。"
+  }
+];
+
+var answered = { 0: false, 1: false, 2: false, 3: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }   // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 4";
+
+      if (score === 4) {
+        document.getElementById("score").textContent =
+          "本轮得分：4 / 4 —— 全对。Option 与错误处理这关你过了，下一课见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>
