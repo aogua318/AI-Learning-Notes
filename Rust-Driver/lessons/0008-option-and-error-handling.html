@@ -172,20 +172,27 @@ println!("{as_result:?}");            // Err("missing")</code></pre>
 }</code></pre>
 
 <pre><code>fn main() {
-    let good = "FF".parse::&lt;u8&gt;();
-    let bad = "ZZ".parse::&lt;u8&gt;();
-    println!("{good:?}");
-    println!("{bad:?}");
+    let decimal = "255".parse::&lt;u8&gt;();
+    let not_decimal = "FF".parse::&lt;u8&gt;();
+    let hex = u8::from_str_radix("FF", 16);
+    println!("{decimal:?}");
+    println!("{not_decimal:?}");
+    println!("{hex:?}");
 }</code></pre>
 
 <p>输出：</p>
 
 <pre><code>Ok(255)
-Err(ParseIntError { kind: InvalidDigit })</code></pre>
+Err(ParseIntError { kind: InvalidDigit })
+Ok(255)</code></pre>
 
-<p><code>"FF".parse::&lt;u8&gt;()</code> 的返回类型是 <code>Result&lt;u8, ParseIntError&gt;</code>。失败不是异常，是一个装着错误值的普通返回值；<code>ParseIntError</code> 是标准库的错误类型，现在用 <code>{:?}</code> 打印即可。</p>
+<p><code>"255".parse::&lt;u8&gt;()</code> 的返回类型是 <code>Result&lt;u8, ParseIntError&gt;</code>。失败不是异常，是一个装着错误值的普通返回值；<code>ParseIntError</code> 是标准库的错误类型，现在用 <code>{:?}</code> 打印即可。</p>
 
-<pre><code>match "FF".parse::&lt;u8&gt;() {
+<div class="callout warn">
+  <b>parse 默认按十进制解析。</b><code>"FF".parse::&lt;u8&gt;()</code> 会返回 <code>Err(InvalidDigit)</code>，不是 <code>Ok(255)</code>；它走的是 <code>u8</code> 的 <code>FromStr</code> 实现，只认十进制数字。要按十六进制解析，用 <code>u8::from_str_radix("FF", 16)</code>——<code>parse_mac</code> 里用的就是它。
+</div>
+
+<pre><code>match u8::from_str_radix("FF", 16) {
     Ok(v) =&gt; println!("ok {v}"),
     Err(e) =&gt; println!("bad hex: {e}"),
 }</code></pre>
