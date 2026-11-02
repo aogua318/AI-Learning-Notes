@@ -1,7 +1,7 @@
 # 学习者档案（Learner Profile）
 
 > 本文件回答一个问题：**这是一个什么样的学习者，该怎么教**。与 MISSION.md（目标）、NOTES.md（进度）、learning-records/（心智模型演变）并列，新会话必读。
-> 所有结论基于会话中的实际行为证据，非印象评价。由 AI 维护，每完成一课或偏好发生变化时更新。最后更新：2026-10-27（第七课结课）。
+> 所有结论基于会话中的实际行为证据，非印象评价。由 AI 维护，每完成一课或偏好发生变化时更新。最后更新：2026-11-02（第八课结课）。
 
 ---
 
@@ -37,6 +37,7 @@
 11. **"编译期"一词会吞掉存储/地址/可变性三轴**（2026-10-22 第五课 CP1）：连续两轮把 `const`/`static` 都描述成"编译期分配、只有一份"，并认为 `static` 可直接改；第三轮才用三轴表分开（const 不保证份数/地址；static 固定一份；普通 static 不可变、static mut 才可改且 unsafe）。教学含义：讲 const/static 必须把**求值时机、存储与地址、可变性**分三列讲，不能只贴"编译期/运行期"标签；反例用 `&CONST` 与 `&STATIC` 的地址保证差异。
 12. **crate / package / file 三层边界易混**（2026-10-22 第六课 CP1）：把 crate 当成"当前项目/文件"，并推出"一个程序最多两个 crate"、"main.rs 有三个根"。纠偏靠三样实证：`cargo metadata` 的 target 表（app lib + app bin + tool bin + helper lib）、`rustc main.rs` 单独编译的 E0433、lib+bin 各自 `pub(crate)` 不互通的 E0603。教学含义：讲模块系统先画"module < crate < package < workspace"四层图，再用真实 workspace 和 `cargo metadata` 讲 target，最后才讲 `pub(crate)`；"一个进程一个入口"与"一个程序几个 crate"必须分开说。
 13. **结构体/枚举术语容易合并**（2026-10-27 第七课 CP1）：把元组结构体说成“外层只有一个元组”，把字段全 Copy 当成结构体 Copy，把 `..base` 当成整体移动，把 `assert_eq!` 当成会移动，把 `Self` 与 `self` 混用。纠偏靠四样实证：`struct Pp(u8,u32,bool)` vs `struct Pp((u8,u32,bool))`、E0382 的整体 move/部分 move 探针、`std::mem::discriminant`、`assert_eq!` 借用探针。教学含义：讲结构体/枚举先分“类型 / 变体 / 值 / 变量 / 形态”五轴；讲 Copy 先问“类型是否实现 Copy”；讲 `..` 先问“哪些字段被省略”；讲断言先声明“借用还是移动”。
+14. **测试通过后绕过目标模式**（2026-11-02 第八课 CP2）：`options2` 用 `optional_integers.pop().unwrap()` 让测试通过，但绕过了本课要练的嵌套模式，且在没有 `None` 哨兵时会 panic；正确写法 `while let Some(Some(integer)) = ...`。教学含义：验收要看“是否用了本课要练的模式”，并用边界探针（无哨兵、空集合）验证；测试通过 ≠ 正确。
 
 ## 三、学习偏好（均为本人确认的决策）
 
@@ -70,13 +71,16 @@
 15. **惰性用副作用演示**：用 `println!` 放在 map 闭包里，让用户看到“map 构造完还没执行、collect 才开始”；collect 的目标类型用 E0283 反例讲。
 16. **结构体/枚举先分五轴**：类型、变体、值、变量、形态；每轴给一个最小例子和一句“回答什么问题”。变体与形态是两条独立的轴，不能用一个词“变体”同时指代。
 17. **Copy / 部分移动用探针钉住**：字段全 Copy ≠ 结构体 Copy；`..base` 逐字段；整体 move vs 部分 move；`assert_eq!` 借用。用 E0382 和可运行代码，而不是口头解释。
+18. **Option 是包装不是扩展**：`Option<T> = None | Some(T)`，T 不变；不要用“给 T 加 None 变体”描述。讲 `Option<ButtonEvent>` 时用“外层有没有、内层是哪个”两层模型。
+19. **解析先问进制与目标类型**：`parse::<T>()` 走 `FromStr`，整数默认十进制；十六进制用 `from_str_radix(s, 16)`。示例必须实测，尤其是 `"FF".parse::<u8>()` 这类看起来像十六进制的字符串。
 
-## 五、当前进度快照（截至 2026-10-27）
+## 五、当前进度快照（截至 2026-11-02）
 
-- **已完成**：第一课《所有权与 move 语义》（rustlings 00~06 通关）；第二课《借用与引用》全部课后任务；第三课《切片与区间》全部课后任务；第四课《闭包与迭代器》CP1–CP3（类型链、first_word 迭代器版、parse_mac 流水线）全部完成。第五课《const 与编译期常量》CP1–CP3 全部通过；const/static 三轴、const 断言与 102 字节定长魔术包已完成。第六课《模块与可见性》CP1–CP3 全部通过；WoL 已拆成 `main.rs` + `protocol.rs`，`parse_mac` 私有、协议函数公开。第七课《结构体与枚举》CP1–CP3 全部通过；`demo/button-model` 完成，`cargo run` 输出 pressed / held / released。术语表语言核心已晋升 37 词条（新增结构体/元组结构体/单元结构体/枚举/变体/变体形态/判别值/负载/部分移动/方法/关联函数/Self/模式匹配）。
-- **作业批阅要点**：第四课的三处典型混淆已纠正——`iter()` 不是 `&i32`、`&i32` 指向元素而非游标；`map` 构造时不执行、collect/for 才驱动；collect 目标类型由上下文决定（E0283）。CP2 对比句中的“索引版减少全量预加载”已纠正为“两者都按需读取，差别在状态管理与写法”。CP3 魔术包 102 字节输出与重构前一致。第五课 CP1 三轮才把 const/static 的份数、地址、可变性分开；CP2 的 const 断言成功拦截 101；CP3 第一版只填了 `0xFF`、MAC 全为 `0x00` 且留下 unused warning，补嵌套循环后输出 102 字节；doc comment 会附着到下一个项，`const _` 不能夹在 `///` 与 fn 之间。`parse_mac` 仍返回 `Vec`，完全无分配留到固件课。第六课 CP2：rustlings modules1/2 正确；modules3 先用 `pub use`，已纠正为 `use`——`use` 只是引入名字，`pub use` 是重新导出。第七课 CP1 三轮修正：元组结构体外层不是“一个元组”、字段全 Copy ≠ 结构体 Copy、`..base` 逐字段、`assert_eq!` 借用、`Self` 是类型别名；CP2 rustlings structs1–3/enums1–3 六题全过；CP3 `button-model` 输出三行，理由“三个 bool 非法组合太多，enum 三选一 + match 穷尽更精确”。
-- **rustlings 进度**：strings1–4、modules1–3、structs1–3、enums1–3 通过；runner 当前 hashmaps1。
-- **下一课**：**Option 与错误处理**（`Option` / `Result`、`?`、`unwrap` 边界）；之后 trait 与泛型。闭包的 Fn/FnMut/FnOnce 细节留到 trait 与泛型课。
+- **已完成**：第一课《所有权与 move 语义》（rustlings 00~06 通关）；第二课《借用与引用》全部课后任务；第三课《切片与区间》全部课后任务；第四课《闭包与迭代器》CP1–CP3（类型链、first_word 迭代器版、parse_mac 流水线）全部完成。第五课《const 与编译期常量》CP1–CP3 全部通过；const/static 三轴、const 断言与 102 字节定长魔术包已完成。第六课《模块与可见性》CP1–CP3 全部通过；WoL 已拆成 `main.rs` + `protocol.rs`，`parse_mac` 私有、协议函数公开。第七课《结构体与枚举》CP1–CP3 全部通过；`demo/button-model` 完成。第八课《Option 与错误处理》CP1–CP3 全部通过；`button-model` 的 `update` 改用 `Option<ButtonEvent>`（输出 no event / pressed / held / released），WoL 的 `parse_mac` / `build_magic_packet` / `main` 全部改用 `Result` + `MacError`（正常 102 字节，坏 MAC 输出 `Error: Length` / `Error: NonHex`，退出码 1）。术语表语言核心已晋升 43 词条（新增结构体/元组结构体/单元结构体/枚举/变体/变体形态/判别值/负载/部分移动/方法/关联函数/Self/模式匹配/Option/Result/问号运算符/解包/解析/panic）。
+- **作业批阅要点**：第四课的三处典型混淆已纠正——`iter()` 不是 `&i32`、`&i32` 指向元素而非游标；`map` 构造时不执行、collect/for 才驱动；collect 目标类型由上下文决定（E0283）。CP2 对比句中的“索引版减少全量预加载”已纠正为“两者都按需读取，差别在状态管理与写法”。CP3 魔术包 102 字节输出与重构前一致。第五课 CP1 三轮才把 const/static 的份数、地址、可变性分开；CP2 的 const 断言成功拦截 101；CP3 第一版只填了 `0xFF`、MAC 全为 `0x00` 且留下 unused warning，补嵌套循环后输出 102 字节；doc comment 会附着到下一个项，`const _` 不能夹在 `///` 与 fn 之间。第五课时 `parse_mac` 仍返回 `Vec`；第八课已改为 `Result<[u8; 6], MacError>`，完全无分配留到固件课。第六课 CP2：rustlings modules1/2 正确；modules3 先用 `pub use`，已纠正为 `use`——`use` 只是引入名字，`pub use` 是重新导出。第七课 CP1 三轮修正：元组结构体外层不是“一个元组”、字段全 Copy ≠ 结构体 Copy、`..base` 逐字段、`assert_eq!` 借用、`Self` 是类型别名；CP2 rustlings structs1–3/enums1–3 六题全过；CP3 `button-model` 输出三行，理由“三个 bool 非法组合太多，enum 三选一 + match 穷尽更精确”。
+- **第八课批阅要点**：CP1 两轮措辞修正——Option 是包装不是扩展（`None | Some(T)`，T 不变）、`ok_or` 参数是错误值、`panic` 不是断言、`?` 是提前返回并用 `From` 转换；CP2 options1–3 / errors1–3 六题通过，options2 第一版 `pop().unwrap()` 测试通过但无 `None` 哨兵时 panic（探针 exit 101），已改 `Some(Some(integer))`；errors2 `map` 版本正确，`?` 版本可读；errors3 `main -> Result`。CP3 button-model 输出 `no event` / `pressed` / `held` / `released`；WoL 正常 102 字节、坏 MAC `Error: Length` / `Error: NonHex`（exit 1）。解释修正：protocol 不用 unwrap 因外部输入失败可预期；`unwrap_or(0)` 会静默填 0 生成错误包；`Result` 交给调用者处理。
+- **rustlings 进度**：strings1–4、modules1–3、structs1–3、enums1–3、options1–3、errors1–3 通过；runner 可能仍停在 errors3，用 watch 模式推进到 errors4（hashmaps1–3 暂跳）。
+- **下一课**：**trait 与泛型**（`<T>`、`From`、`Debug`、`Termination`）；`errors4–6` 顺着补完。闭包的 Fn/FnMut/FnOnce 细节留到 trait 与泛型课。
 - **长期路线**：语言预备期（进度超前）→ 格斗摇杆固件（Pico + rp2040-hal）→ USB 网络检测盒 → Linux Rust 驱动源码研读。
 
 ## 六、更新规则

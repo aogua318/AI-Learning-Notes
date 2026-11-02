@@ -162,6 +162,20 @@ s.clear();                        // 编译通过：不可变借用已结束
 - `cargo fmt`、`cargo check` 通过；`cargo run` 输出仍为 102 字节魔术包。
 - 完整任务见 [lessons/0006-modules-and-visibility.html](../../lessons/0006-modules-and-visibility.html)。
 
+## 第八课练习：错误处理（已完成）
+
+- `src/protocol.rs` 新增 `#[derive(Debug)] pub enum MacError { Length, NonHex }`。
+- `parse_mac` 返回 `Result<[u8; 6], MacError>`：段数不是 6 → `Length`；`u8::from_str_radix(part, 16)` 失败（非法字符、空段或溢出）→ `NonHex`。
+- `build_magic_packet` 返回 `Result<[u8; PACKET_LEN], MacError>`，内部 `parse_mac(mac)?`，最后 `Ok(packet)`。
+- `main` 返回 `Result<(), MacError>`，用 `build_magic_packet(&mac)?`，末尾 `Ok(())`。
+- 正常 `cargo run` 仍是 102 字节魔术包；坏 MAC：
+  - `AA-BB-CC-DD-EE` → `Error: Length`；
+  - `AA-BB-CC-DD-EE-ZZ` → `Error: NonHex`；
+  - 两者退出码都是 1。
+- 为什么不用 `unwrap`：MAC 是外部输入，解析失败可预期；`unwrap` 会 panic，`unwrap_or(0)` 会把坏段静默变成 `0x00` 生成错误包。`Result` 把 `Length` / `NonHex` 交给调用者处理。
+- `MacError` 必须是 `pub`，因为它出现在公开函数 `build_magic_packet` 的返回类型里。
+- 完整任务见 [lessons/0008-option-and-error-handling.html](../../lessons/0008-option-and-error-handling.html)。
+
 ## 下一步（项目路线）
 
 1. MAC 地址从命令行参数读入（`std::env::args()`，顺带练 `Option`）；

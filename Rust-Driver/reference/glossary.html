@@ -245,6 +245,42 @@
   <dd class="avoid">避免：switch（Rust 不贯穿且强制穷尽）</dd>
 </dl>
 
+<dl class="term">
+  <dt>Option（可选值）</dt>
+  <dd>标准库泛型枚举 <code>Option&lt;T&gt;</code>，两个变体：<code>None</code>（没有值）与 <code>Some(T)</code>（有一个 T）。它是新类型，不修改 T；<code>None</code> 是 Option 的变体，不是 T 的变体。用于表达“可能有值，也可能没有”。</dd>
+  <dd class="avoid">避免：空类型、给 T 加 None 变体、可空指针</dd>
+</dl>
+
+<dl class="term">
+  <dt>Result（结果）</dt>
+  <dd>标准库泛型枚举 <code>Result&lt;T, E&gt;</code>，两个变体：<code>Ok(T)</code>（成功值）与 <code>Err(E)</code>（错误值）。T 与 E 都是类型参数；E 由 API 作者在签名里选择，具体错误值由失败分支给出。用于表达“成功或失败，以及失败原因”。</dd>
+  <dd class="avoid">避免：异常、错误码、Option（Option 没有失败原因）</dd>
+</dl>
+
+<dl class="term">
+  <dt>问号运算符（?）</dt>
+  <dd>用于 Result 或 Option 的早退：成功取出值继续；失败从当前函数提前返回 <code>Err(From::from(e))</code> 或 <code>None</code>。只能用在返回同族 Result/Option 的函数里；错误类型需能通过 From 转换。不是 panic，也不是异常。</dd>
+  <dd class="avoid">避免：异常传播、unwrap、try/catch</dd>
+</dl>
+
+<dl class="term">
+  <dt>解包（unwrap / expect）</dt>
+  <dd><code>Option</code> / <code>Result</code> 的取值方法：成功取出值，失败 panic。expect 可自定义 panic 消息；unwrap_or 在失败时返回默认值，不 panic。unwrap/expect 只适合测试、原型或确定不会失败的不变量，不适合外部输入。</dd>
+  <dd class="avoid">避免：错误处理、把 unwrap_or 当成错误处理</dd>
+</dl>
+
+<dl class="term">
+  <dt>解析（parse / FromStr）</dt>
+  <dd><code>str::parse::&lt;T&gt;()</code> 调用目标类型 T 的 <code>FromStr</code> 实现，返回 <code>Result&lt;T, T::Err&gt;</code>。整数默认按十进制解析；十六进制用 <code>from_str_radix(s, 16)</code>，不要用 <code>"FF".parse::&lt;u8&gt;()</code>。turbofish <code>::&lt;T&gt;</code> 用于显式指定类型参数。</dd>
+  <dd class="avoid">避免：parse 自动识别进制、parse 等于 from_str_radix</dd>
+</dl>
+
+<dl class="term">
+  <dt>panic（不可恢复错误）</dt>
+  <dd>运行期终止机制：打印消息和位置，默认展开当前线程并通常使程序退出（退出码 101）；no_std / panic=abort 下通常停机。<code>panic!</code>、<code>assert!</code>、<code>unwrap</code>、<code>expect</code> 都可触发。用于 bug 或不变量被破坏，不用于可预期、可恢复的失败。</dd>
+  <dd class="avoid">避免：异常、错误返回值、可恢复错误</dd>
+</dl>
+
 <h2>嵌入式与硬件</h2>
 
 <dl class="term">

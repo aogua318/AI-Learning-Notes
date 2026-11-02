@@ -9,7 +9,7 @@
 //! 第四课的迭代器重构（parse_mac / print_hex）也在此完成。本文件是完成态。
 
 mod protocol;
-use protocol::{build_magic_packet, print_hex};
+use protocol::{build_magic_packet, print_hex,MacError};
 
 /// 返回第一个空格之前的切片；没有空格就返回整个字符串。
 /// 参数与返回值都是 &str：只借用、不复制。
@@ -25,11 +25,11 @@ fn first_word(s: &str) -> &str {
     &s[..]
 }
 
-fn main() {
+fn main() -> Result<(), MacError>{
     let mac = String::from("AA-BB-CC-DD-EE-FF");
 
     // 借出去看一眼：mac 的所有权还在 main 手里，函数只读
-    let packet = build_magic_packet(&mac);
+    let packet = build_magic_packet(&mac)?;
 
     // 练习完成态：mac 毫发无损，照常打印
     println!("目标 MAC：{mac}");
@@ -51,4 +51,5 @@ fn main() {
     // let w = first_word(&t);
     // t.clear();
     // println!("{w}");
+    Ok(())
 }
