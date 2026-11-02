@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第九课：trait 与泛型 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+<style>
+  /* 图注与第三课保持一致 */
+  figure figcaption { font-size: 0.88rem; color: var(--ink-soft); text-align: center; margin-top: 0.5rem; }
+
+  /* 英文报错 / 中文对照的双栏块；窄屏自动堆叠 */
+  .errpair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .errpair > div {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.65rem 0.85rem;
+    background: var(--code-bg);
+    font-size: 0.88rem;
+  }
+  .errpair > div.zh { background: var(--card-bg); }
+  .errpair b { display: block; margin-bottom: 0.35rem; }
+  .errpair pre { margin: 0.3rem 0 0; padding: 0.55rem 0.7rem; border: 0; background: transparent; }
+  .errpair ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
+  @media (max-width: 640px) { .errpair { grid-template-columns: 1fr; } }
+
+  /* 决策表：让“选哪个”一眼可见 */
+  .decision td:first-child { width: 46%; }
+</style>
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0009</span>
+  <span>预计 40–45 分钟（可在第 2 节后停一次）</span>
+  <span>前置：第八课 CP1–CP3 完成</span>
+  <span>阶段：语言预备期（第 9 课）</span>
+</div>
+
+<h1>第九课：trait 与泛型——同一份契约，两种多态</h1>
+
+<div class="callout teacher">
+  <b>本课路线：</b>你已经用过 <code>Option&lt;T&gt;</code>、<code>Result&lt;T, E&gt;</code>、<code>Vec&lt;T&gt;</code>。今天把 <code>&lt;T&gt;</code> 从“用”翻到“定义”：先写 trait（契约），再用 <code>&lt;T: Trait&gt;</code> 让编译器为每个具体类型生成代码（静态分发），然后用 <code>&amp;dyn Trait</code> / <code>Box&lt;dyn Trait&gt;</code> 把具体类型擦除（动态分发），最后用 <code>Box&lt;dyn Error&gt;</code> 收掉 errors5，并回收闭包的 <code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code>。<br>
+  <b>判断标准：</b>不再把 trait 说成“父类/接口继承”，能在 <code>&lt;T: Trait&gt;</code>、<code>&amp;dyn Trait</code>、<code>Box&lt;dyn Trait&gt;</code>、自定义错误枚举之间选对工具。
+</div>
+
+<p class="meta">本课示例均用 rustc 1.99.1（edition 2021）实测；英文原文与报错附中文对照。代码里的中文注释是给你看的，不需要抄进最终项目。</p>
+
+<h2>0. 两种多态，一个契约</h2>
+
+<p><b>多态（polymorphism）</b>指的是“同一个接口，多种具体类型”。Rust 用 trait 写这个接口，但有两种使用方式：</p>
+
+<ol>
+  <li><b>静态分发（static dispatch）</b>：写 <code>fn describe&lt;B: ButtonInput&gt;(button: &amp;B)</code>。编译器在调用点就知道 <code>B</code> 是哪个具体类型，为每个具体类型生成一份特化代码。运行期不再查“这是哪个类型”。</li>
+  <li><b>动态分发（dynamic dispatch）</b>：写 <code>fn describe_dyn(button: &amp;dyn ButtonInput)</code>。具体类型被擦除，运行期通过函数表找到实现；同一份代码可以处理不同的具体类型，适合异构集合。</li>
+</ol>
+
+<p>C 程序员的两个锚点（只是类比，不是同一机制）：</p>
+<ul>
+  <li><code>&lt;T: Trait&gt;</code> ≈ 宏为每个具体类型展开一份调用代码；编译期就绑定好，运行期没有函数指针表。</li>
+  <li><code>&amp;dyn Trait</code> / <code>Box&lt;dyn Trait&gt;</code> ≈ C 的“结构体里放函数指针 + 一个 void* 上下文”；运行期查表调用。Rust 把这张表藏起来，并在编译期检查 trait 契约。</li>
+</ul>
+
+<p>为什么现在讲：摇杆固件里，rp2040-hal 的引脚实现 embedded-hal 的 <code>InputPin</code> trait；驱动逻辑写成泛型，能同时服务真引脚和测试假引脚。到了 PC 端错误处理，又要用 <code>Box&lt;dyn Error&gt;</code> 把不同错误装进同一个返回类型。两种用法都绕不开 trait。</p>
+
+<figure class="figure-zoom" data-zoomable>
+<svg viewBox="0 0 920 360" role="img" aria-label="trait 契约的静态分发与动态分发示意图" style="font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;">
+  <style>
+    .f-box { fill: var(--card-bg); stroke: var(--line); stroke-width: 1.6; }
+    .f-contract { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+    .f-static { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+    .f-dyn { fill: var(--card-bg); stroke: var(--ok); stroke-width: 1.6; }
+    .f-title { fill: var(--ink); font-size: 16px; font-weight: 650; }
+    .f-code { fill: var(--ink); font-size: 14px; font-family: 'Cascadia Code', Consolas, monospace; }
+    .f-small { fill: var(--ink-soft); font-size: 13px; }
+    .f-arrow { stroke: var(--ink-soft); stroke-width: 1.8; fill: none; }
+    .f-accent-arrow { stroke: var(--accent); stroke-width: 2; fill: none; }
+  </style>
+  <defs>
+    <marker id="f-ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" style="fill: var(--ink-soft);"/>
+    </marker>
+    <marker id="f-ah-accent" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" style="fill: var(--accent);"/>
+    </marker>
+  </defs>
+
+  <rect class="f-contract" x="20" y="110" width="235" height="140" rx="10"/>
+  <text class="f-title" x="36" y="142">trait ButtonInput</text>
+  <text class="f-code" x="36" y="172">fn is_pressed(&amp;self)</text>
+  <text class="f-code" x="52" y="194">-&gt; bool</text>
+  <text class="f-small" x="36" y="224">契约：只写签名，不写字段</text>
+
+  <rect class="f-box" x="300" y="55" width="190" height="82" rx="8"/>
+  <text class="f-title" x="316" y="82">impl RealPin</text>
+  <text class="f-small" x="316" y="106">fn is_pressed -&gt; bool</text>
+  <text class="f-small" x="316" y="124">pin == 15</text>
+
+  <rect class="f-box" x="300" y="205" width="190" height="82" rx="8"/>
+  <text class="f-title" x="316" y="232">impl FakePin</text>
+  <text class="f-small" x="316" y="256">fn is_pressed -&gt; bool</text>
+  <text class="f-small" x="316" y="274">self.pressed</text>
+
+  <path class="f-accent-arrow" d="M 255 165 C 278 140 278 110 300 100" marker-end="url(#f-ah-accent)"/>
+  <path class="f-accent-arrow" d="M 255 195 C 278 220 278 250 300 250" marker-end="url(#f-ah-accent)"/>
+
+  <rect class="f-static" x="550" y="25" width="350" height="135" rx="10"/>
+  <text class="f-title" x="566" y="53">describe&lt;B: ButtonInput&gt;</text>
+  <text class="f-small" x="566" y="75">编译期：B 的具体类型已知</text>
+  <rect class="f-box" x="566" y="92" width="150" height="42" rx="6"/>
+  <text class="f-code" x="578" y="118">B=RealPin → 特化 1</text>
+  <rect class="f-box" x="734" y="92" width="150" height="42" rx="6"/>
+  <text class="f-code" x="746" y="118">B=FakePin → 特化 2</text>
+  <text class="f-small" x="566" y="150">单态化 / 静态分发 / 运行期零查表</text>
+
+  <rect class="f-dyn" x="550" y="195" width="350" height="135" rx="10"/>
+  <text class="f-title" x="566" y="223">describe_dyn(&amp;dyn ButtonInput)</text>
+  <text class="f-small" x="566" y="245">运行期：具体类型已擦除</text>
+  <rect class="f-box" x="566" y="262" width="318" height="42" rx="6"/>
+  <text class="f-code" x="578" y="288">数据指针 + 函数表 → 具体实现</text>
+  <text class="f-small" x="566" y="320">动态分发 / 每次查表 / 可放不同具体类型</text>
+
+  <path class="f-arrow" d="M 490 96 C 515 96 525 90 550 90" marker-end="url(#f-ah)"/>
+  <path class="f-arrow" d="M 490 246 C 515 246 525 258 550 258" marker-end="url(#f-ah)"/>
+</svg>
+<button class="zoom-badge" type="button" aria-expanded="false">⤢ 点击放大</button>
+<figcaption>图 1：同一份 <code>ButtonInput</code> 契约的两条用法。上半部分静态分发：编译器为 <code>RealPin</code> 和 <code>FakePin</code> 各生成一份 <code>describe</code> 特化代码；下半部分动态分发：<code>describe_dyn</code> 只保留一份代码，通过数据指针 + 函数表在运行期找到具体实现。第三课的切片也是胖指针；<code>&amp;dyn Trait</code> 只是把“长度”换成了“函数表指针”。</figcaption>
+</figure>
+
+<h2>1. trait：把能力写成契约</h2>
+
+<h3>1.1 两份一模一样的函数</h3>
+
+<p>假设有两个按键来源：真实引脚和测试用的假引脚。先看它们的结构体：</p>
+
+<pre><code>struct RealPin { pin: u8 }
+struct FakePin { pressed: bool }</code></pre>
+
+<p>如果直接写描述逻辑，很容易复制两份：</p>
+
+<pre><code>fn describe_real(pin: &amp;RealPin) -&gt; &amp;'static str {
+    if pin.is_pressed() { "pressed" } else { "released" }
+}
+
+fn describe_fake(pin: &amp;FakePin) -&gt; &amp;'static str {
+    if pin.is_pressed() { "pressed" } else { "released" }
+}</code></pre>
+
+<p class="meta">这两份函数假设两个类型已经有 <code>is_pressed</code> 方法；下一段用 trait 正式把这份能力写出来。</p>
+
+<p>函数体一模一样，只有参数类型不同。C 里要么复制，要么用 <code>void*</code> + 函数指针；Rust 的选择是：先给这种能力起个名字，再让两个类型分别承诺实现它。</p>
+
+<h3>1.2 trait 定义与 impl</h3>
+
+<pre><code>trait ButtonInput {
+    fn is_pressed(&amp;self) -&gt; bool;
+}
+
+impl ButtonInput for RealPin {
+    fn is_pressed(&amp;self) -&gt; bool {
+        // 真实硬件里这里读寄存器；课堂用引脚号模拟
+        self.pin == 15
+    }
+}
+
+impl ButtonInput for FakePin {
+    fn is_pressed(&amp;self) -&gt; bool {
+        self.pressed
+    }
+}</code></pre>
+
+<ul>
+  <li><b>trait 块只写方法签名</b>；方法体写在各自的 <code>impl</code> 里。<code>&amp;self</code> 表示只读借用；trait 方法也可以写 <code>&amp;mut self</code> 或 <code>self</code>，接收者决定调用时是借用还是取得所有权。</li>
+  <li><b>trait 不能携带字段</b>。数据（<code>pin</code>、<code>pressed</code>）留在具体类型里；trait 只描述“能做什么”。</li>
+  <li><b>trait 本身不是可以创建值的具体类型</b>：不能写 <code>let x: ButtonInput</code>；有值的是具体类型 <code>RealPin</code> / <code>FakePin</code>。<code>dyn ButtonInput</code> 是 trait object 的类型，下一节讲。</li>
+  <li><b><code>impl Trait for Type</code> 不是继承</b>。它没有父类、没有字段继承，也不会让 <code>RealPin</code> 变成 <code>ButtonInput</code> 的子类型；它只是让 <code>RealPin</code> 满足这份契约。</li>
+  <li><b>一个类型可以实现多个 trait</b>；trait 之间也不构成类继承树。</li>
+  <li><b><code>Self</code> 在 trait 里指实现它的具体类型</b>；在 <code>impl ButtonInput for RealPin</code> 里，<code>Self</code> 就是 <code>RealPin</code>。</li>
+  <li><code>ButtonInput</code> 是<b>对象安全</b>的：方法接收 <code>&amp;self</code>、返回 <code>bool</code>，没有返回 <code>Self</code>、没有泛型参数；所以后面可以写 <code>dyn ButtonInput</code>。不是所有 trait 都能这样做，完整规则以后再说。</li>
+</ul>
+
+<div class="callout">
+  <b>用例重锚：</b>button 只是载体。原理是“任意具体类型都可以承诺同一组行为”；换成 Sensor、Pin、Transport，模式完全一样。不要把这个例子当成 trait 存在的原因。
+</div>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <p>下面哪一句最准确地描述 trait？</p>
+  <div class="quiz-options">
+    <button data-choice="a">一种保存共享字段的父类，供子类型继承</button>
+    <button data-choice="b">一组方法签名的契约，由具体类型用 impl 承诺实现</button>
+    <button data-choice="c">一种在运行期自动查找方法的注册表</button>
+    <button data-choice="d">一种自动为所有类型生成方法体的编译器功能</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<h2>2. 泛型 + bound：编译期特化</h2>
+
+<h3>2.1 写一次，服务多种类型</h3>
+
+<p>有了契约，<code>describe</code> 可以只写一份：</p>
+
+<pre><code>fn describe&lt;B: ButtonInput&gt;(button: &amp;B) -&gt; &amp;'static str {
+    if button.is_pressed() { "pressed" } else { "released" }
+}</code></pre>
+
+<ul>
+  <li><code>&lt;B&gt;</code> 是<b>类型参数</b>（type parameter）：调用时才填入具体类型。</li>
+  <li><code>: ButtonInput</code> 是<b>约束</b>（bound）：告诉编译器“这个 <code>B</code> 保证实现了 <code>ButtonInput</code>”。</li>
+  <li>函数体里能调用 <code>button.is_pressed()</code>，唯一依据就是 bound；bound 是编译期的能力清单，不是运行期检查。</li>
+</ul>
+
+<p>类型链：</p>
+
+<pre><code>describe(&amp;real)
+→ B = RealPin
+→ &amp;B = &amp;RealPin
+→ button.is_pressed() → RealPin::is_pressed</code></pre>
+
+<h3>2.2 去掉 bound 会发生什么</h3>
+
+<p>把签名改成 <code>fn describe&lt;B&gt;(button: &amp;B)</code>，再调用 <code>button.is_pressed()</code>，编译器在<b>编译期</b>就拒绝：</p>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0599]: no method named `is_pressed` found for reference `&amp;B` in the current scope
+help: items from traits can only be used if the type parameter is bounded by the trait
+help: ... restrict type parameter `B` with trait `ButtonInput`</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li>在当前作用域中，引用 <code>&amp;B</code> 上找不到名为 <code>is_pressed</code> 的方法。</li>
+      <li>只有类型参数被该 trait 约束时，才能使用 trait 中的项。</li>
+      <li>考虑用 <code>ButtonInput</code> 约束类型参数 <code>B</code>。</li>
+    </ul>
+  </div>
+</div>
+
+<p>注意错误编号是 <b>E0599</b>（方法找不到），不是 E0277（trait 约束不满足）。它的 help 已经把修法写出来了：加上 <code>: ButtonInput</code>。</p>
+
+<h3>2.3 单态化与静态分发</h3>
+
+<p>调用 <code>describe(&amp;real)</code> 和 <code>describe(&amp;fake)</code> 时，编译器看到两个不同的 <code>B</code>，通常会为每个具体类型生成一份特化代码。这叫<b>单态化</b>（monomorphization），对应<b>静态分发</b>（static dispatch）。</p>
+
+<table>
+  <tr><th>问题</th><th>什么时候回答</th></tr>
+  <tr><td><code>B</code> 是哪个具体类型？</td><td>编译期（调用点）</td></tr>
+  <tr><td><code>B</code> 有没有 <code>is_pressed</code>？</td><td>编译期（bound 检查）</td></tr>
+  <tr><td>运行期调用哪份代码？</td><td>已经确定，直接调用</td></tr>
+</table>
+
+<ul>
+  <li><b>好处</b>：运行期没有“查这是哪个类型”的步骤；调用点直接绑定，优化器容易内联。</li>
+  <li><b>代价</b>：每个具体类型一份代码，类型多了二进制会变大；所有具体类型必须在编译期已知。</li>
+  <li>优化器可能把相同机器码合并；但语言层面的语义仍然是“按具体类型特化”，不是运行期分发。</li>
+</ul>
+
+<div class="callout teacher">
+  <b>探针 A：</b>把下面完整程序存成 <code>trait_demo.rs</code>，运行一次；然后删掉 <code>: ButtonInput</code>，重新编译，观察 E0599；最后把 bound 加回去。<br>
+  <code>rustc trait_demo.rs -o trait_demo.exe &amp;&amp; ./trait_demo.exe</code>
+</div>
+
+<pre><code>trait ButtonInput {
+    fn is_pressed(&amp;self) -&gt; bool;
+}
+
+struct RealPin { pin: u8 }
+struct FakePin { pressed: bool }
+
+impl ButtonInput for RealPin {
+    fn is_pressed(&amp;self) -&gt; bool { self.pin == 15 }
+}
+
+impl ButtonInput for FakePin {
+    fn is_pressed(&amp;self) -&gt; bool { self.pressed }
+}
+
+fn describe&lt;B: ButtonInput&gt;(button: &amp;B) -&gt; &amp;'static str {
+    if button.is_pressed() { "pressed" } else { "released" }
+}
+
+fn main() {
+    let real = RealPin { pin: 15 };
+    let fake = FakePin { pressed: false };
+    println!("real: {}", describe(&amp;real));
+    println!("fake: {}", describe(&amp;fake));
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>real: pressed
+fake: released</code></pre>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">trait ButtonInput {
+    fn is_pressed(&amp;self) -&gt; bool;
+}
+
+fn describe&lt;B&gt;(button: &amp;B) -&gt; &amp;'static str {
+    if button.is_pressed() { "pressed" } else { "released" }
+}
+
+fn main() {
+    let fake = FakePin { pressed: false };
+    println!("{}", describe(&amp;fake));
+}
+
+struct FakePin { pressed: bool }
+
+impl ButtonInput for FakePin {
+    fn is_pressed(&amp;self) -&gt; bool { self.pressed }
+}</div>
+  <p>编译这段代码会发生什么？</p>
+  <div class="quiz-options">
+    <button data-choice="a">编译通过，运行期自动寻找 is_pressed 的实现</button>
+    <button data-choice="b">编译通过，但运行到 is_pressed 时 panic</button>
+    <button data-choice="c">编译错误 E0599：B 没有 bound，不能调用 is_pressed</button>
+    <button data-choice="d">编译错误 E0277：B 没有实现 Termination</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <p><code>fn describe&lt;B: ButtonInput&gt;</code> 分别被 <code>describe(&amp;real)</code> 和 <code>describe(&amp;fake)</code> 调用后，编译器通常会做什么？</p>
+  <div class="quiz-options">
+    <button data-choice="a">为 RealPin 和 FakePin 各生成一份特化代码，调用点直接绑定</button>
+    <button data-choice="b">把两个实参合并成同一种类型，运行期再查表调用</button>
+    <button data-choice="c">只生成一份代码，运行期用类型名选择方法</button>
+    <button data-choice="d">把 trait 转成函数指针数组，运行时动态调用</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="callout teacher">
+  <b>自然停顿点：</b>到这里你已经学完静态分发。如果一次吃不下，先停，做探针 A；后半段从 trait object 开始。CP1 覆盖全课，不用分批交。
+</div>
+
+<h2>3. trait object：运行期装箱</h2>
+
+<h3>3.1 &amp;dyn：借用一个 trait object</h3>
+
+<p>同一份契约，第二种用法是把具体类型擦掉：</p>
+
+<pre><code>fn describe_dyn(button: &amp;dyn ButtonInput) -&gt; &amp;'static str {
+    if button.is_pressed() { "pressed" } else { "released" }
+}</code></pre>
+
+<ul>
+  <li><code>dyn ButtonInput</code> 读作“某个实现了 <code>ButtonInput</code> 的具体类型，但具体是谁运行期才知道”。这叫 <b>trait object</b>（trait 对象）。</li>
+  <li><code>dyn ButtonInput</code> 是<b>未定长</b>（unsized）的，不能直接当局部变量；必须放在指针后面：<code>&amp;dyn ButtonInput</code> 或 <code>Box&lt;dyn ButtonInput&gt;</code>。</li>
+  <li><code>&amp;dyn ButtonInput</code> 只借用，不拥有堆上的值；调用时通过函数表找到具体实现。</li>
+</ul>
+
+<h3>3.2 为什么需要它：异构集合</h3>
+
+<p>泛型函数的一个 <code>B</code> 只能是一个具体类型；<code>Vec&lt;B&gt;</code> 里不能同时放 <code>RealPin</code> 和 <code>FakePin</code>。trait object 可以：</p>
+
+<pre><code>let real = RealPin { pin: 15 };
+let fake = FakePin { pressed: false };
+
+let inputs: Vec&lt;&amp;dyn ButtonInput&gt; = vec![&amp;real, &amp;fake];
+for input in inputs {
+    println!("{}", describe_dyn(input));
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>pressed
+released</code></pre>
+
+<p><code>Vec&lt;&amp;dyn ButtonInput&gt;</code> 里每个元素都是“数据指针 + 函数表指针”，具体类型可以不同；这就是动态分发换来的灵活性。</p>
+
+<h3>3.3 Box&lt;dyn&gt;：拥有一个 trait object</h3>
+
+<p><code>&amp;dyn</code> 借用，生命周期受外部值限制；需要<b>拥有</b>一个 trait object 时，用 <code>Box&lt;dyn Trait&gt;</code>。接着上面的 <code>ButtonInput</code>、<code>RealPin</code> 和 <code>describe_dyn</code>：</p>
+
+<pre><code>let boxed: Box&lt;dyn ButtonInput&gt; = Box::new(RealPin { pin: 3 });
+
+println!("{}", boxed.is_pressed());          // false：方法调用自动解引用
+println!("{}", describe_dyn(boxed.as_ref())); // released：显式取 &amp;dyn</code></pre>
+
+<ul>
+  <li><code>Box::new(value)</code> 把值放到堆上；<code>Box</code> 拥有它，离开作用域时通过 Drop 释放。你第一课学的所有权在这里照常生效。</li>
+  <li><code>Box&lt;dyn ButtonInput&gt;</code> 是一个<b>胖指针</b>：一个数据指针 + 一个函数表指针；它指向堆上的具体值，但编译期不知道具体类型。</li>
+  <li>方法调用会自动解引用（<code>boxed.is_pressed()</code> 可以）；把 <code>&amp;Box&lt;dyn T&gt;</code> 传给 <code>&amp;dyn T</code> 参数时要显式解引用：<code>boxed.as_ref()</code> 或 <code>&amp;**boxed</code>。</li>
+  <li>尺寸（本机 x86_64 实测，不是跨平台语言保证）：<code>Box&lt;RealPin&gt;</code> 是 8 字节（细指针）；<code>&amp;dyn ButtonInput</code>、<code>Box&lt;dyn ButtonInput&gt;</code>、<code>&amp;[u8]</code> 都是 16 字节（胖指针）。第三课的切片是“地址 + 长度”，trait object 是“地址 + 函数表”。</li>
+</ul>
+
+<table>
+  <tr><th>类型</th><th>大小</th><th>说明</th></tr>
+  <tr><td><code>Box&lt;RealPin&gt;</code></td><td>8</td><td>具体类型，细指针</td></tr>
+  <tr><td><code>&amp;dyn ButtonInput</code></td><td>16</td><td>借用 trait object，胖指针</td></tr>
+  <tr><td><code>Box&lt;dyn ButtonInput&gt;</code></td><td>16</td><td>拥有 trait object，胖指针</td></tr>
+  <tr><td><code>&amp;[u8]</code></td><td>16</td><td>切片胖指针（第三课对照）</td></tr>
+</table>
+
+<h3>3.4 动态分发的代价与边界</h3>
+
+<ul>
+  <li><b>代价</b>：每次调用要通过函数表找实现，通常比静态分发多一次间接跳转；也更难内联。换来的是“一份代码处理多种具体类型”和异构集合。</li>
+  <li><b>对象安全</b>：不是所有 trait 都能写成 <code>dyn Trait</code>。返回 <code>Self</code>、带泛型参数的方法、没有 <code>self</code> 的关联函数等，可能让 trait 不满足对象安全。<code>ButtonInput</code> 和 <code>Error</code> 都可以；完整规则以后再说。</li>
+  <li><b>C 锚点</b>：<code>&amp;dyn Trait</code> ≈ 一个 <code>void*</code> 数据指针 + 一张函数指针表；Rust 把这张表自动生成并检查类型。</li>
+</ul>
+
+<div class="callout teacher">
+  <b>探针：</b>把 3.2 的代码补上 <code>ButtonInput</code> 的 trait 和两个 impl，存成 <code>dyn_demo.rs</code>，运行 <code>rustc dyn_demo.rs -o dyn_demo.exe &amp;&amp; ./dyn_demo.exe</code>，确认输出 <code>pressed</code> / <code>released</code>。CP1 会要这个输出。
+</div>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <p>下面哪种场景最适合 trait object（<code>&amp;dyn</code> 或 <code>Box&lt;dyn&gt;</code>）而不是 <code>fn describe&lt;B: ButtonInput&gt;</code>？</p>
+  <div class="quiz-options">
+    <button data-choice="a">编译期已知所有具体类型，而且只调用一次</button>
+    <button data-choice="b">需要编译器为每个具体类型生成一份特化代码</button>
+    <button data-choice="c">需要调用 is_pressed 时完全没有运行期查表开销</button>
+    <button data-choice="d">需要把 RealPin 和 FakePin 放进同一个 Vec，运行期统一处理</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<h2>4. 标准库 trait 与 Box&lt;dyn Error&gt;</h2>
+
+<p>你已经见过这些 trait，只是当时没点名。现在把它们放回 trait 的框架里。</p>
+
+<h3>4.1 Debug：调试打印</h3>
+
+<ul>
+  <li><code>#[derive(Debug)]</code> 让编译器生成 <code>impl Debug for 类型</code>；它不是魔法，只是自动写 impl。</li>
+  <li><code>{:?}</code> 要求值的类型实现 <code>Debug</code>；<code>Result::unwrap</code> 要求错误类型 <code>E: Debug</code>（panic 时要打印错误）。</li>
+  <li><code>main -&gt; Result&lt;(), E&gt;</code> 也要求 <code>E: Debug</code>，因为 <code>Result</code> 的 <code>Termination</code> 实现需要它。第八课报过 E0277，今天知道它来自哪里。</li>
+</ul>
+
+<p>你的 WoL 里：<code>MacError</code> 在 <a href="../demo/wol/src/protocol.rs">protocol.rs</a> 顶部有 <code>#[derive(Debug)]</code>；<code>main</code> 在 <a href="../demo/wol/src/main.rs">main.rs</a> 里返回 <code>Result&lt;(), MacError&gt;</code>。两者能配上，就是因为 <code>MacError: Debug</code>。</p>
+
+<h3>4.2 Display：面向用户的打印</h3>
+
+<p><code>{}</code> 走 <code>Display</code>；<code>{:?}</code> 走 <code>Debug</code>。标准库的错误 trait 要求两者都有：</p>
+
+<pre><code>pub trait Error: Debug + Display {
+    // 默认方法由标准库提供，实现者通常不用写
+}</code></pre>
+
+<p>这叫 <b>supertrait</b>（超级 trait）：<code>Error</code> 的契约里写着 <code>Debug + Display</code>，所以实现 <code>Error</code> 之前必须先有这两个。上面是简化签名；errors5 文件顶部已有 <code>use std::error::Error;</code> 和 <code>use std::fmt;</code>，并且已经给你写好了 <code>Display</code>：</p>
+
+<pre><code>impl fmt::Display for CreationError {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        let description = match self {
+            CreationError::Negative =&gt; "number is negative",
+            CreationError::Zero =&gt; "number is zero",
+        };
+        f.write_str(description)
+    }
+}
+
+impl Error for CreationError {}</code></pre>
+
+<ul>
+  <li><code>fmt::Formatter</code> 是输出缓冲区，<code>fmt::Result</code> 是格式化结果；这段是标准库格式化的固定写法，errors5 已经提供，不需要你从零设计。</li>
+  <li><code>impl Error for CreationError {}</code> 是空 impl：<code>Error</code> 的默认方法由标准库提供；只要 <code>Debug + Display</code> 已经满足，空 impl 就表示“承诺实现这份契约”。</li>
+  <li>如果缺 <code>Display</code>，连 <code>impl Error</code> 都过不了。实测报错：</li>
+</ul>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0277]: `CreationError` doesn't implement `std::fmt::Display`
+help: the trait `std::fmt::Display` is not implemented for `CreationError`
+note: required by a bound in `std::error::Error`</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li><code>CreationError</code> 没有实现 <code>std::fmt::Display</code>。</li>
+      <li><code>std::error::Error</code> 的约束要求实现者先满足 <code>Display</code>。</li>
+    </ul>
+  </div>
+</div>
+
+<h3>4.3 Error：所有错误的共同契约</h3>
+
+<ul>
+  <li><code>Error</code> 是标准库的错误 trait；<code>ParseIntError</code> 已经实现它，errors5 的 <code>CreationError</code> 通过 <code>impl Error for CreationError {}</code> 实现它。</li>
+  <li><code>Error</code> 是对象安全的，所以可以写 <code>Box&lt;dyn Error&gt;</code>：一个能装下“任何实现了 <code>Error</code> 的错误”的盒子。</li>
+  <li><code>Box&lt;dyn Error&gt;</code> 本身拥有堆上的错误值；它实现了 <code>Debug</code>（因为 <code>Error: Debug</code>），所以能作为 <code>main</code> 的返回错误。</li>
+</ul>
+
+<h3>4.4 From：? 背后的转换 trait</h3>
+
+<p><code>From</code> 的方向很容易说反。假设 <code>MacError</code> 已经增加了一个 <code>BadNumber(ParseIntError)</code> 变体（errors6 会用同样的模式包 <code>ParseIntError</code>）：</p>
+
+<pre><code>use std::num::ParseIntError;
+
+impl From&lt;ParseIntError&gt; for MacError {
+    fn from(e: ParseIntError) -&gt; Self {
+        MacError::BadNumber(e)
+    }
+}</code></pre>
+
+<p>这表示 <b><code>ParseIntError</code> → <code>MacError</code></b>。当函数的返回错误是 <code>MacError</code>，而 <code>?</code> 拿到的是 <code>ParseIntError</code> 时，<code>?</code> 会执行 <code>return Err(MacError::from(e))</code>。转换不了就是编译期错误，不是运行期失败。</p>
+
+<p>对照你现在的 WoL：<code>parse_mac</code> 用的是</p>
+
+<pre><code>bytes[i] = u8::from_str_radix(part, 16)
+    .map_err(|_| MacError::NonHex)?;</code></pre>
+
+<p><code>map_err</code> 是<b>手动转换</b>：在调用点把 <code>ParseIntError</code> 变成 <code>MacError::NonHex</code>，然后 <code>?</code> 看到的已经是同一种错误类型。它简单、能选择变体，但每处都要写。<code>From</code> 是<b>集中转换</b>：实现一次，<code>?</code> 自动调用。errors6 会让你把 <code>ParseIntError</code> 包进自定义错误的一个变体里，既保留原因，又能在 <code>From</code> 或 <code>map_err</code> 里集中转换。</p>
+
+<h3>4.5 Termination：main 的返回类型</h3>
+
+<p><code>main</code> 的返回类型必须实现 <code>Termination</code>。<code>()</code> 实现了；<code>Result&lt;(), E: Debug&gt;</code> 也实现了。于是：</p>
+
+<ul>
+  <li><code>Ok(())</code>：程序正常结束，退出码 0。</li>
+  <li><code>Err(e)</code>：运行期用 <code>Debug</code> 打印 <code>Error: {e:?}</code>，退出码 1。</li>
+  <li><code>Box&lt;dyn Error&gt;</code> 是 <code>Debug</code>，所以 <code>Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> 满足 <code>Termination</code>。这就是 errors5 的 <code>main</code> 能直接返回它的原因。</li>
+</ul>
+
+<h3>4.6 errors5 的完整模式</h3>
+
+<p>把上面的东西拼起来（<code>PositiveNonzeroInteger</code> 是 errors5 里的结构体；这里只展示 <code>main</code> 的返回类型与 <code>?</code>）：</p>
+
+<pre><code>use std::error::Error;
+
+fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+    let input = "42"; // errors5 里是 pretend_user_input
+    let x: i64 = input.parse()?;
+    println!("output={:?}", PositiveNonzeroInteger::new(x)?);
+    Ok(())
+}</code></pre>
+
+<ul>
+  <li><code>input.parse::&lt;i64&gt;()</code> 失败时产生 <code>ParseIntError</code>；<code>?</code> 通过标准库的 <code>From&lt;E&gt; for Box&lt;dyn Error&gt;</code> 把它装箱。</li>
+  <li><code>PositiveNonzeroInteger::new(x)</code> 失败时产生 <code>CreationError</code>；它已经实现 <code>Display</code> 和 <code>Error</code>，所以 <code>?</code> 也能装箱。</li>
+  <li>两种错误类型完全不同，但都被擦除成 <code>Box&lt;dyn Error&gt;</code>，<code>main</code> 只写一个返回类型。</li>
+</ul>
+
+<p>实测三种输入的输出（errors5 的代码结构，输入换成参数）：</p>
+
+<table>
+  <tr><th>输入</th><th>输出</th><th>退出码</th></tr>
+  <tr><td><code>42</code></td><td><code>output=PositiveNonzeroInteger(42)</code></td><td>0</td></tr>
+  <tr><td><code>-5</code></td><td><code>Error: Negative</code></td><td>1</td></tr>
+  <tr><td><code>abc</code></td><td><code>Error: ParseIntError { kind: InvalidDigit }</code></td><td>1</td></tr>
+</table>
+
+<p>注意 <code>-5</code> 打印的是 <code>Error: Negative</code>（<code>Debug</code>），不是 <code>Display</code> 的 <code>"number is negative"</code>。<code>main</code> 的错误打印走 <code>Debug</code>；<code>Display</code> 是给你自己用 <code>{}</code> 打印用户消息时准备的。这就是为什么 <code>Error</code> 两个都要。</p>
+
+<div class="callout warn">
+  <b>什么时候用 Box&lt;dyn Error&gt;：</b>应用层的 <code>main</code> 想快速统一多种错误，可以。库代码（比如你的 <code>parse_mac</code>）优先用自定义错误枚举：调用者能按 <code>Length</code> / <code>NonHex</code> 做决策，而不是拿到一个只能打印的盒子。固件 <code>no_std</code> 没有堆分配器，<code>Box</code> 用不了，更要用自定义错误。errors6 的注释说的就是这件事。
+</div>
+
+<h3>4.7 探针 B：最小 Box&lt;dyn Error&gt;</h3>
+
+<p>把下面存成 <code>box_error.rs</code>：</p>
+
+<pre><code>use std::error::Error;
+
+fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+    let n: i64 = "abc".parse()?;
+    println!("{n}");
+    Ok(())
+}</code></pre>
+
+<p>运行：</p>
+
+<pre><code>rustc box_error.rs -o box_error.exe &amp;&amp; ./box_error.exe; echo "exit=$?"</code></pre>
+
+<p>预期：</p>
+
+<pre><code>Error: ParseIntError { kind: InvalidDigit }
+exit=1</code></pre>
+
+<p>CP1 会要你解释：这里打印的是 <code>Debug</code> 还是 <code>Display</code>？为什么 <code>?</code> 没有 panic？</p>
+
+<div class="quiz" data-quiz="4">
+  <h3>练习 5</h3>
+  <p><code>impl Error for CreationError {}</code> 之前，编译器要求 <code>CreationError</code> 已经实现哪些 trait？</p>
+  <div class="quiz-options">
+    <button data-choice="a">Debug + Display</button>
+    <button data-choice="b">Copy + Clone</button>
+    <button data-choice="c">From + Into</button>
+    <button data-choice="d">Iterator + IntoIterator</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="5">
+  <h3>练习 6</h3>
+  <p>在 <code>fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> 里，<code>let n: i64 = s.parse()?;</code> 的 <code>?</code> 做了什么？</p>
+  <div class="quiz-options">
+    <button data-choice="a">把 ParseIntError 用 Debug 打印后 panic</button>
+    <button data-choice="b">通过 From 把 ParseIntError 装箱成 Box&lt;dyn Error&gt;，失败时提前返回</button>
+    <button data-choice="c">把 ParseIntError 转成 String 后继续执行</button>
+    <button data-choice="d">要求 ParseIntError 实现 Termination</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<h2>5. 闭包的三张门牌：Fn / FnMut / FnOnce</h2>
+
+<p>第四课写闭包时见过 <code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code>，当时只当作“门牌”。现在有了 trait，可以正式回收：它们就是标准库描述“闭包怎么使用捕获环境”的三个 trait。</p>
+
+<table>
+  <tr><th>trait</th><th>调用时的接收者</th><th>能不能改捕获值</th><th>能调用几次</th></tr>
+  <tr><td><code>Fn</code></td><td><code>&amp;self</code></td><td>不能</td><td>多次</td></tr>
+  <tr><td><code>FnMut</code></td><td><code>&amp;mut self</code></td><td>能</td><td>多次</td></tr>
+  <tr><td><code>FnOnce</code></td><td><code>self</code></td><td>消费捕获值</td><td>一次</td></tr>
+</table>
+
+<p>关系是 <code>Fn: FnMut</code>、<code>FnMut: FnOnce</code>：能当 <code>Fn</code> 用的闭包，也能当 <code>FnMut</code> 和 <code>FnOnce</code> 用；反过来不成立。这和 <code>Error: Debug + Display</code> 是同一种 supertrait 结构。</p>
+
+<h3>5.1 FnMut：修改捕获值，多次调用</h3>
+
+<pre><code>fn call_twice&lt;F: FnMut() -&gt; u32&gt;(mut f: F) -&gt; (u32, u32) {
+    (f(), f())
+}
+
+fn main() {
+    let mut n = 0;
+    let mut inc = || { n += 1; n };
+    println!("{:?}", call_twice(&amp;mut inc)); // (1, 2)
+}</code></pre>
+
+<ul>
+  <li><code>inc</code> 修改了捕获的 <code>n</code>，所以它不能实现 <code>Fn</code>（<code>Fn</code> 只允许 <code>&amp;self</code>）。</li>
+  <li>它能被多次调用，所以是 <code>FnMut</code>；<code>call_twice</code> 的参数写 <code>F: FnMut</code>，并且 <code>f</code> 要声明成 <code>mut</code>，因为调用时需要 <code>&amp;mut self</code>。</li>
+  <li><code>&amp;mut inc</code> 作为实参：<code>&amp;mut F</code> 在 <code>F: FnMut</code> 时也实现 <code>FnMut</code>；这样 <code>inc</code> 之后还能继续用。</li>
+</ul>
+
+<h3>5.2 FnOnce：消费捕获值，只能调用一次</h3>
+
+<pre><code>fn consume&lt;F: FnOnce() -&gt; String&gt;(f: F) -&gt; String {
+    f()
+}
+
+fn main() {
+    let s = String::from("hi");
+    let take = move || s;
+    println!("{}", consume(take)); // hi
+    // println!("{}", consume(take)); // E0382：take 已经被移走
+}</code></pre>
+
+<ul>
+  <li><code>move || s</code> 把 <code>String</code> 的所有权移进闭包；调用 <code>f()</code> 时闭包被消费，所以它只保证一次调用，是 <code>FnOnce</code>。</li>
+  <li>如果闭包只读捕获值，它可以实现 <code>Fn</code>；如果修改，至少是 <code>FnMut</code>；如果消费，只能是 <code>FnOnce</code>。</li>
+</ul>
+
+<p>C 锚点：C 的函数指针没有捕获环境；闭包相当于“函数指针 + 捕获的环境”。<code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code> 描述调用时对这份环境是只读、可改，还是拿走所有权。</p>
+
+<div class="quiz" data-quiz="6">
+  <h3>练习 7</h3>
+  <p>一个闭包会修改捕获的计数器，并在循环里被多次调用；函数参数应写哪个 bound？</p>
+  <div class="quiz-options">
+    <button data-choice="a">F: Fn()</button>
+    <button data-choice="b">F: FnOnce()</button>
+    <button data-choice="c">F: FnMut()</button>
+    <button data-choice="d">F: Iterator</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 7</p>
+
+<h2>6. 收束：怎么选</h2>
+
+<table class="decision">
+  <tr><th>需求</th><th>选择</th></tr>
+  <tr><td>具体类型编译期已知；性能优先；同一种类型批量处理</td><td><code>&lt;T: Trait&gt;</code>，静态分发，单态化</td></tr>
+  <tr><td>需要装不同具体类型；运行期统一处理；异构集合</td><td><code>&amp;dyn Trait</code>（借用）或 <code>Box&lt;dyn Trait&gt;</code>（拥有）</td></tr>
+  <tr><td>应用层想快速统一多种错误；<code>main</code> 返回</td><td><code>Box&lt;dyn Error&gt;</code></td></tr>
+  <tr><td>库代码要按错误种类做决策；固件 <code>no_std</code> 无堆</td><td>自定义错误枚举（如 <code>MacError</code>）</td></tr>
+</table>
+
+<p><b>三句话总结：</b></p>
+<ol>
+  <li>trait 是行为契约；<code>impl Trait for Type</code> 提供行为，不提供字段，也不是继承。</li>
+  <li><code>&lt;T: Trait&gt;</code> 编译期特化，运行期零查表；<code>&amp;dyn</code> / <code>Box&lt;dyn&gt;</code> 运行期查表，能装异构类型。</li>
+  <li><code>Box&lt;dyn Error&gt;</code> 是应用层统一错误的工具；库和固件优先自定义错误枚举。</li>
+</ol>
+
+<p><b>常见误区：</b></p>
+<ul>
+  <li>“trait 是父类/接口继承” → trait 是契约；<code>impl</code> 不继承字段，Rust 没有类继承。</li>
+  <li>“<code>&lt;T&gt;</code> 是运行期类型参数” → 它是编译期类型参数，单态化后运行期没有类型分发。</li>
+  <li>“bound 是运行期检查” → 它是编译期门禁；没有 bound 直接 E0599。</li>
+  <li>“<code>Box&lt;dyn Trait&gt;</code> 自动实现 Trait” → 它是胖指针；传给 <code>&amp;dyn Trait</code> 要 <code>as_ref()</code> 或 <code>&amp;**</code>，方法调用才会自动解引用。</li>
+  <li>“<code>main -&gt; Result</code> 的错误打印用 Display” → 用 Debug；<code>Display</code> 是 <code>{}</code> 的用户消息。</li>
+  <li>“<code>Box&lt;dyn Error&gt;</code> 到哪都好” → 库代码要可匹配的错误类型；<code>no_std</code> 没堆，用不了 Box。</li>
+</ul>
+
+<h2>7. 课后任务：CP1（只交这一项）</h2>
+
+<p><b>先读</b>：The Book 10.1–10.2、17.2；9.2 的 <code>main -&gt; Box&lt;dyn Error&gt;</code> 作为对照。10.3 生命周期跳过。读完再合上课程默写，最后对照课程修正；有偏差标“曾误→正解”。</p>
+
+<p>CP1 是一次提交：四条笔记 + 两个探针。探针是笔记的证据，不另算任务；quiz 不计入 CP1。CP2（errors4–6）和 CP3（button-model）等 CP1 通过后再发。</p>
+
+<h3>笔记 1：两种分发</h3>
+<ul>
+  <li>trait 是什么、不是什么；<code>impl ButtonInput for FakePin</code> 具体添加了什么；为什么 trait 不能有字段、不能直接当具体值类型用。</li>
+  <li><code>&lt;B: ButtonInput&gt;</code> 与 <code>&amp;dyn ButtonInput</code> / <code>Box&lt;dyn ButtonInput&gt;</code> 的区别；各自适合什么场景。</li>
+  <li>用“编译期 / 运行期”两列表说清单态化与动态分发各自在什么时候决定调用哪份代码。</li>
+</ul>
+
+<h3>笔记 2：Box&lt;dyn Error&gt; 的组成</h3>
+<ul>
+  <li><code>dyn</code>、<code>Box</code>、<code>Error</code> 三者各贡献什么；<code>Box&lt;dyn Error&gt;</code> 为什么能同时装 <code>ParseIntError</code> 和 <code>CreationError</code>。</li>
+  <li><code>Error: Debug + Display</code> 是什么意思；errors5 里的 <code>impl Display</code> 和 <code>impl Error for CreationError {}</code> 各自做什么。</li>
+  <li><code>?</code> 如何把错误装箱成 <code>Box&lt;dyn Error&gt;</code>；为什么 <code>main -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt;</code> 能编译。</li>
+</ul>
+
+<h3>笔记 3：标准库 trait 的落点</h3>
+<ul>
+  <li><code>Debug</code> / <code>Display</code> / <code>From</code> / <code>Termination</code> 各自在 WoL 或 errors5 的哪一处起作用。</li>
+  <li>现在的 WoL 用 <code>map_err</code> 还是 <code>From</code>？两者差别是什么？errors6 为什么要保留 <code>ParseIntError</code> 而不是只留一个 <code>NonHex</code>？</li>
+  <li>为什么库代码更推荐自定义错误枚举，而 <code>main</code> 可以用 <code>Box&lt;dyn Error&gt;</code>？</li>
+</ul>
+
+<h3>笔记 4：闭包的三张门牌</h3>
+<ul>
+  <li><code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code> 的调用接收者分别是什么？各能调用几次？</li>
+  <li>为什么修改捕获计数器的闭包至少是 <code>FnMut</code>，而不是 <code>Fn</code>？</li>
+  <li><code>Fn: FnMut: FnOnce</code> 的包含关系是什么？举一个 <code>FnOnce</code> 的例子。</li>
+</ul>
+
+<h3>探针 A / B</h3>
+<ol>
+  <li><b>探针 A</b>：把第 2 节的泛型示例存成 <code>trait_demo.rs</code>，运行并贴 <code>real: pressed</code> / <code>fake: released</code>；删掉 <code>: ButtonInput</code>，编译，贴 E0599 原文 + 中文对照；恢复 bound。再把第 3 节的 dyn 示例存成 <code>dyn_demo.rs</code>，贴 <code>pressed</code> / <code>released</code>。</li>
+  <li><b>探针 B</b>：写最小 <code>main -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt;</code>，让 <code>"abc".parse::&lt;i64&gt;()?</code> 失败；贴输出和 exit code；说明打印的是 <code>Debug</code> 还是 <code>Display</code>。</li>
+</ol>
+
+<h3>通过标准</h3>
+<ul>
+  <li>四条笔记都用自己的话，不照抄课程段落。</li>
+  <li>能区分静态/动态分发，并说清各自适合的场景；E0599 与两个探针输出正确。</li>
+  <li>能解释 <code>Box&lt;dyn Error&gt;</code> 的组成、<code>Error: Debug + Display</code>、<code>?</code> 的装箱；探针 B 的 exit code 是 1。</li>
+  <li><code>From</code> 方向不反；能说清 <code>map_err</code> 与 <code>From</code> 的分工；能说出库代码为何优先自定义错误。</li>
+  <li><code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code> 的接收者与调用次数正确，能解释计数闭包为什么是 <code>FnMut</code>。</li>
+</ul>
+
+<p>不通过我会用探针重讲，不加新概念；通过后再开 CP2。</p>
+
+<h2>8. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议按顺序读）：<br>
+<a href="https://doc.rust-lang.org/book/ch10-01-syntax.html" target="_blank">The Rust Book 10.1: Generic Data Types</a>（泛型数据类型：类型参数与单态化）<br>
+<a href="https://doc.rust-lang.org/book/ch10-02-traits.html" target="_blank">The Rust Book 10.2: Traits: Defining Shared Behavior</a>（trait 定义、约束、实现）<br>
+<a href="https://doc.rust-lang.org/book/ch17-02-trait-objects.html" target="_blank">The Rust Book 17.2: Using Trait Objects That Allow for Values of Different Types</a>（trait object 与动态分发）<br>
+<a href="https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html" target="_blank">The Rust Book 9.2: Recoverable Errors with Result</a>（<code>main</code> 返回 <code>Box&lt;dyn Error&gt;</code> 的出处）<br>
+<a href="https://doc.rust-lang.org/std/convert/trait.From.html" target="_blank">std::convert::From</a> · <a href="https://doc.rust-lang.org/std/fmt/trait.Debug.html" target="_blank">std::fmt::Debug</a> · <a href="https://doc.rust-lang.org/std/fmt/trait.Display.html" target="_blank">std::fmt::Display</a> · <a href="https://doc.rust-lang.org/std/error/trait.Error.html" target="_blank">std::error::Error</a> · <a href="https://doc.rust-lang.org/std/process/trait.Termination.html" target="_blank">std::process::Termination</a><br>
+<a href="https://doc.rust-lang.org/std/boxed/struct.Box.html" target="_blank">std::boxed::Box</a> · <a href="https://doc.rust-lang.org/std/ops/trait.Fn.html" target="_blank">std::ops::Fn</a> · <a href="https://doc.rust-lang.org/std/ops/trait.FnMut.html" target="_blank">FnMut</a> · <a href="https://doc.rust-lang.org/std/ops/trait.FnOnce.html" target="_blank">FnOnce</a></p>
+
+<p><b>下一课预告</b>：CP2 做 rustlings <code>errors4–6</code>（自定义错误、<code>Box&lt;dyn Error&gt;</code>、错误包装）；CP3 再把 <code>button-model</code> 加上 <code>ButtonInput</code> trait 与泛型/动态分发。之后进入生命周期与集合。</p>
+
+<p><b>随时提问</b>：静态和动态怎么选、<code>Box&lt;dyn Error&gt;</code> 为什么能装不同错误、闭包为什么是 <code>FnMut</code>——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0008-option-and-error-handling.html">第八课：Option 与错误处理</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../demo/wol/README.md">WoL 项目</a> · <a href="../demo/button-model/README.md">button-model</a> · <a href="../soldering-tutorial.md">焊接入门</a></p>
+</div>
+
+<script src="../assets/zoomable-figure.js"></script>
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   结构同前八课：每题一个 .quiz 卡片，data-quiz 是题目编号；
+   按钮上 data-choice 是选项键；答过即锁定，正确项高亮。
+   ============================================================ */
+
+var QUIZ_ANSWERS = [
+  {
+    correct: "b",
+    okMsg: "对。trait 定义行为契约；impl 为具体类型提供方法体；trait 不携带字段，也不是父类。",
+    errMsg: "不对。trait 不是父类、不是运行期注册表，也不会自动为所有类型生成方法体；它是一组方法签名，由具体类型用 impl 实现。"
+  },
+  {
+    correct: "c",
+    okMsg: "对。<B> 没有 bound 时，编译器只知道 B 是某个类型，不知道它有 is_pressed；E0599 的 help 会建议加上 : ButtonInput。",
+    errMsg: "不对。编译器不会等到运行期；没有 bound 时，button.is_pressed() 直接报 E0599，help 会建议用 ButtonInput 约束 B。"
+  },
+  {
+    correct: "a",
+    okMsg: "对。单态化在编译期为每个具体类型生成特化版本，调用点静态绑定；运行期没有“这是哪个类型”的查表。优化器可能合并相同机器码，但语义上仍按具体类型特化。",
+    errMsg: "不对。泛型 <B: ButtonInput> 是静态分发：编译期就知道 B 是 RealPin 还是 FakePin，并为每个具体类型生成特化代码；运行期不再查表。"
+  },
+  {
+    correct: "d",
+    okMsg: "对。trait object 擦除具体类型，运行期通过函数表调用；同一份代码可以处理不同具体类型，适合异构集合。代价是每次调用多一次查表，内联也更难。",
+    errMsg: "不对。前三项都是静态分发擅长的场景：具体类型编译期已知、单态化、零查表。需要把不同具体类型放进同一个集合、运行期统一处理时，才轮到 trait object。"
+  },
+  {
+    correct: "a",
+    okMsg: "对。Error 的定义带 Debug + Display 两个 supertrait；errors5 里 #[derive(Debug)] 和手写的 impl Display 就是为这一步准备的。",
+    errMsg: "不对。Error 要求实现者同时满足 Debug + Display；空 impl 不代表没有要求。errors5 的 #[derive(Debug)] 和 impl Display 正是在补这两个前置条件。"
+  },
+  {
+    correct: "b",
+    okMsg: "对。? 在失败时执行 return Err(From::from(e))；标准库提供了 From<E> for Box<dyn Error>，于是 ParseIntError 被装箱，main 提前返回 Err，运行期打印 Debug 并退出 1。",
+    errMsg: "不对。? 不 panic，也不转 String；它把错误交给 From 转换。目标错误是 Box<dyn Error> 时，标准库的 From 实现会把 ParseIntError 装箱，然后 main 提前返回 Err。"
+  },
+  {
+    correct: "c",
+    okMsg: "对。修改捕获值需要 &mut self，多次调用需要 FnMut；Fn 不允许可变捕获，FnOnce 只能调用一次。",
+    errMsg: "不对。Fn 只允许 &self，不能修改捕获值；FnOnce 只能调用一次。既修改又多次调用，bound 应写 F: FnMut()。"
+  }
+];
+
+var answered = { 0: false, 1: false, 2: false, 3: false, 4: false, 5: false, 6: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }   // 答过就锁题，不允许刷分
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 7";
+
+      if (score === 7) {
+        document.getElementById("score").textContent =
+          "本轮得分：7 / 7 —— 全对。trait 这一关你过了，CP1 见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>

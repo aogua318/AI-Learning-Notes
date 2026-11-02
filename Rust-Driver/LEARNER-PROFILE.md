@@ -20,7 +20,7 @@
 2. **主动交叉验证**：用 variables5 验证 variables4 的结论；实测 `price = price - 10` 报错验证不可变规则；指出"functions5 刚好说明分号的作用"。习惯用第二个实验确认第一个结论。
 3. **主动建立知识连接**：用 Python 引用计数类比 Drop（类比本身是错的，但行为说明他在主动往旧知识上挂新知识——教学时应先肯定连接意图，再纠正映射）。
 4. **抽象层级爬升快，且能自主综合规则**：几轮之内从"栈/堆"的具体框架爬到"编译期数据流分析"的机制层；第二课追问弧线中自主综合出 NLL 的完整操作化规则（探针证实），独立重发现"排他 = 编译期互斥"的并发洞察（并自行补上数据竞争与同步的边界）。
-5. **进度持续超前且会自选加练**：语言预备期原计划 4 周，实际已通关第一至七课全部作业（第五课 const/static、定长魔术包；第六课模块拆分与 rustlings 10_modules；第七课 rustlings 07/08 + button-model）；strings3 还自行用了迭代器写法。
+5. **进度持续超前且会自选加练**：语言预备期原计划 4 周，实际已通关第一至八课全部作业（第五课 const/static、定长魔术包；第六课模块拆分与 rustlings 10_modules；第七课 rustlings 07/08 + button-model；第八课 Option/Result + WoL 错误处理）；第九课《trait 与泛型》已发布，CP1 待交；strings3 还自行用了迭代器写法。
 
 ### 固有模式（教学时要预判，不是缺陷）
 
@@ -79,8 +79,8 @@
 - **已完成**：第一课《所有权与 move 语义》（rustlings 00~06 通关）；第二课《借用与引用》全部课后任务；第三课《切片与区间》全部课后任务；第四课《闭包与迭代器》CP1–CP3（类型链、first_word 迭代器版、parse_mac 流水线）全部完成。第五课《const 与编译期常量》CP1–CP3 全部通过；const/static 三轴、const 断言与 102 字节定长魔术包已完成。第六课《模块与可见性》CP1–CP3 全部通过；WoL 已拆成 `main.rs` + `protocol.rs`，`parse_mac` 私有、协议函数公开。第七课《结构体与枚举》CP1–CP3 全部通过；`demo/button-model` 完成。第八课《Option 与错误处理》CP1–CP3 全部通过；`button-model` 的 `update` 改用 `Option<ButtonEvent>`（输出 no event / pressed / held / released），WoL 的 `parse_mac` / `build_magic_packet` / `main` 全部改用 `Result` + `MacError`（正常 102 字节，坏 MAC 输出 `Error: Length` / `Error: NonHex`，退出码 1）。术语表语言核心已晋升 43 词条（新增结构体/元组结构体/单元结构体/枚举/变体/变体形态/判别值/负载/部分移动/方法/关联函数/Self/模式匹配/Option/Result/问号运算符/解包/解析/panic）。
 - **作业批阅要点**：第四课的三处典型混淆已纠正——`iter()` 不是 `&i32`、`&i32` 指向元素而非游标；`map` 构造时不执行、collect/for 才驱动；collect 目标类型由上下文决定（E0283）。CP2 对比句中的“索引版减少全量预加载”已纠正为“两者都按需读取，差别在状态管理与写法”。CP3 魔术包 102 字节输出与重构前一致。第五课 CP1 三轮才把 const/static 的份数、地址、可变性分开；CP2 的 const 断言成功拦截 101；CP3 第一版只填了 `0xFF`、MAC 全为 `0x00` 且留下 unused warning，补嵌套循环后输出 102 字节；doc comment 会附着到下一个项，`const _` 不能夹在 `///` 与 fn 之间。第五课时 `parse_mac` 仍返回 `Vec`；第八课已改为 `Result<[u8; 6], MacError>`，完全无分配留到固件课。第六课 CP2：rustlings modules1/2 正确；modules3 先用 `pub use`，已纠正为 `use`——`use` 只是引入名字，`pub use` 是重新导出。第七课 CP1 三轮修正：元组结构体外层不是“一个元组”、字段全 Copy ≠ 结构体 Copy、`..base` 逐字段、`assert_eq!` 借用、`Self` 是类型别名；CP2 rustlings structs1–3/enums1–3 六题全过；CP3 `button-model` 输出三行，理由“三个 bool 非法组合太多，enum 三选一 + match 穷尽更精确”。
 - **第八课批阅要点**：CP1 两轮措辞修正——Option 是包装不是扩展（`None | Some(T)`，T 不变）、`ok_or` 参数是错误值、`panic` 不是断言、`?` 是提前返回并用 `From` 转换；CP2 options1–3 / errors1–3 六题通过，options2 第一版 `pop().unwrap()` 测试通过但无 `None` 哨兵时 panic（探针 exit 101），已改 `Some(Some(integer))`；errors2 `map` 版本正确，`?` 版本可读；errors3 `main -> Result`。CP3 button-model 输出 `no event` / `pressed` / `held` / `released`；WoL 正常 102 字节、坏 MAC `Error: Length` / `Error: NonHex`（exit 1）。解释修正：protocol 不用 unwrap 因外部输入失败可预期；`unwrap_or(0)` 会静默填 0 生成错误包；`Result` 交给调用者处理。
-- **rustlings 进度**：strings1–4、modules1–3、structs1–3、enums1–3、options1–3、errors1–3 通过；runner 可能仍停在 errors3，用 watch 模式推进到 errors4（hashmaps1–3 暂跳）。
-- **下一课**：**trait 与泛型**（`<T>`、`From`、`Debug`、`Termination`）；`errors4–6` 顺着补完。闭包的 Fn/FnMut/FnOnce 细节留到 trait 与泛型课。
+- **rustlings 进度**：strings1–4、modules1–3、structs1–3、enums1–3、options1–3、errors1–3 通过；runner 可能仍停在 errors3，CP2 从 errors4 开始（hashmaps1–3 暂跳）。
+- **第九课**：**《trait 与泛型》已发布**（`lessons/0009-traits-and-generics.html`）——trait 契约、泛型/单态化/静态分发、trait object/`Box`/动态分发、`Debug`/`Display`/`Error`/`From`/`Termination`、`Box<dyn Error>`（errors5）、`Fn`/`FnMut`/`FnOnce`；CP1 待交（四条笔记 + 探针 A/B）。CP2（errors4–6）与 CP3（button-model）等 CP1 通过后再发。
 - **长期路线**：语言预备期（进度超前）→ 格斗摇杆固件（Pico + rp2040-hal）→ USB 网络检测盒 → Linux Rust 驱动源码研读。
 
 ## 六、更新规则
