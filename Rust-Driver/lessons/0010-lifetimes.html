@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第十课：生命周期 — Rust-Driver</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+<style>
+  /* 英文报错 / 中文对照；与第九课一致 */
+  .errpair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .errpair > div {
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.65rem 0.85rem;
+    background: var(--code-bg);
+    font-size: 0.88rem;
+  }
+  .errpair > div.zh { background: var(--card-bg); }
+  .errpair b { display: block; margin-bottom: 0.35rem; }
+  .errpair pre {
+    margin: 0.3rem 0 0;
+    padding: 0.55rem 0.7rem;
+    border: 0;
+    background: transparent;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .errpair ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
+  @media (max-width: 640px) {
+    .errpair { grid-template-columns: 1fr; }
+    .errpair > div { min-height: 6.2rem; }
+  }
+
+  /* 生命周期时间线表：第一列固定，便于对照 */
+  .lifetime-table td:first-child,
+  .lifetime-table th:first-child { width: 22%; }
+</style>
+</head>
+<body>
+
+<div class="lesson-meta">
+  <span>课程 0010</span>
+  <span>预计 35–45 分钟（示例完整，可分段读）</span>
+  <span>前置：第九课 CP1–CP3 完成</span>
+  <span>阶段：语言预备期（第 10 课）</span>
+</div>
+
+<h1>第十课：生命周期——引用的有效期怎么标</h1>
+
+<div class="callout teacher">
+  <b>本课路线：</b>你其实已经用过生命周期：<code>fn first_word(s: &amp;str) -&gt; &amp;str</code> 没写 <code>'a</code> 也能编译；<code>fn describe() -&gt; &amp;'static str</code> 直接返回字面量。今天把编译器替你做的省略展开：<code>'a</code> 是什么、什么时候必须写、结构体存引用怎么办、<code>'static</code> 到底承诺了什么。<br>
+  <b>判断标准：</b>能读懂并写出 <code>fn longest&lt;'a&gt;...</code>，能解释 E0106 / E0515 / E0597，不再把 <code>'static</code> 当成“延长寿命”。
+</div>
+
+<p class="meta">本课示例均用 rustc 1.99.1（edition 2021）实测；英文原文与报错附中文对照。代码里的中文注释是给你看的，不需要抄进最终项目。</p>
+
+<h2>0. 你已经在用生命周期</h2>
+
+<p>先看两个熟悉的签名：</p>
+
+<ul>
+  <li><code>fn first_word(s: &amp;str) -&gt; &amp;str</code>：返回值的引用来自 <code>s</code>；你没有写生命周期，编译器自动把返回值和 <code>s</code> 绑在一起。</li>
+  <li><code>fn describe() -&gt; &amp;'static str</code>：返回字符串字面量；<code>'static</code> 表示这个借用在整个程序期间有效。</li>
+</ul>
+
+<p><b>生命周期（lifetime）是编译期的标注</b>，用来描述“这个引用能活多久、和谁的借用绑定”。它不是运行期字段，不会出现在结构体布局里，也没有运行期开销。</p>
+
+<div class="callout">
+  <b>C 锚点：</b>C 里返回指向局部变量的指针会悬垂，但编译器不一定拦；Rust 用生命周期标注让编译器在编译期检查引用的有效性。标注不是“延长寿命”，而是把“谁必须活得比谁久”写成契约。
+</div>
+
+<h2>1. 为什么需要生命周期：引用不能比 owner 活得久</h2>
+
+<h3>1.1 返回局部变量的引用：E0515</h3>
+
+<pre><code>fn bad() -&gt; &amp;'static str {
+    let s = String::from("hi"); // s 拥有堆上的 "hi"
+    &amp;s                          // 借用 s 的内部数据
+}
+
+fn main() {
+    println!("{}", bad());
+}</code></pre>
+
+<p><code>s</code> 在 <code>bad</code> 返回时被 drop；返回的引用会指向已经释放的数据。实测：</p>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0515]: cannot return reference to local variable `s`
+returns a reference to data owned by the current function</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li>不能返回指向局部变量 <code>s</code> 的引用。</li>
+      <li>返回的是当前函数拥有的数据的引用；函数返回后数据被释放。</li>
+    </ul>
+  </div>
+</div>
+
+<h3>1.2 owner 先 drop，借用后使用：E0597</h3>
+
+<pre><code>fn main() {
+    let r;
+    {
+        let s = String::from("hi"); // s 只活到内层块结束
+        r = &amp;s;                     // r 借用 s
+    }                               // s 在这里 drop
+    println!("{r}");                // r 还在用，但 s 已经没了
+}</code></pre>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0597]: `s` does not live long enough
+borrowed value does not live long enough
+`s` dropped here while still borrowed
+borrow later used here</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li><code>s</code> 活不够久；被借用的值活不够久。</li>
+      <li><code>s</code> 在仍被借用时就被丢弃，而借用稍后还要使用。</li>
+    </ul>
+  </div>
+</div>
+
+<p>这两类问题都不能靠“写一个生命周期标注”解决：<b>标注不能延长数据的寿命</b>。正确方向是返回拥有所有权的值（如 <code>String</code>），或让 owner 活到引用最后一次使用之后。</p>
+
+<h2>2. <code>longest</code>：显式生命周期参数</h2>
+
+<h3>2.1 完整程序</h3>
+
+<p>下面函数返回两个字符串中较长的那一个引用。它必须说明“返回值借用自 x 或 y，二者都要活够”：</p>
+
+<pre><code>fn longest&lt;'a&gt;(x: &amp;'a str, y: &amp;'a str) -&gt; &amp;'a str {
+    // 读作：x、y、返回值都至少活到 'a；返回值不会超过较短的那个
+    if x.len() &gt; y.len() {
+        x
+    } else {
+        y
+    }
+}
+
+fn main() {
+    let a = String::from("long string");
+    let b = String::from("short");
+    let r = longest(&amp;a, &amp;b);
+    println!("{r}");
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>long string</code></pre>
+
+<h3>2.2 <code>'a</code> 到底约束了什么</h3>
+
+<ul>
+  <li><code>&lt;'a&gt;</code> 是<b>生命周期参数</b>，像类型参数 <code>&lt;T&gt;</code> 一样在调用点填入。</li>
+  <li><code>x: &amp;'a str</code>、<code>y: &amp;'a str</code>：x、y 都必须至少活到 <code>'a</code>。</li>
+  <li><code>-&gt; &amp;'a str</code>：返回的引用也只能在 <code>'a</code> 内使用。</li>
+  <li>实际调用时，<code>'a</code> 不会超过 x、y 两者中**较短的那个可用区间**；可以理解为两者的交集。</li>
+  <li>它不是“x 的完整生命周期”，也不是“y 的完整生命周期”；它是一段两者都覆盖的时间。</li>
+</ul>
+
+<table class="lifetime-table">
+  <tr><th>名字</th><th>类型</th><th>生命周期</th><th>说明</th></tr>
+  <tr><td><code>a</code></td><td><code>String</code></td><td>main 全程</td><td>拥有自己的堆数据</td></tr>
+  <tr><td><code>b</code></td><td><code>String</code></td><td>main 全程</td><td>拥有自己的堆数据</td></tr>
+  <tr><td><code>r</code></td><td><code>&amp;str</code></td><td><code>'a</code> = 两者中较短</td><td>不能超过 a 或 b 的存活范围</td></tr>
+</table>
+
+<p>类型链：</p>
+
+<pre><code>longest(&amp;a, &amp;b)
+→ 'a = a、b 都还活着的区间
+→ 返回 &amp;'a str
+→ r: &amp;str 只能在这个区间内使用</code></pre>
+
+<h3>2.3 不写生命周期：E0106</h3>
+
+<pre><code>fn longest(x: &amp;str, y: &amp;str) -&gt; &amp;str {
+    if x.len() &gt; y.len() { x } else { y }
+}
+
+fn main() {
+    println!("{}", longest("abcd", "123"));
+}</code></pre>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0106]: missing lifetime specifier
+help: this function's return type contains a borrowed value,
+      but the signature does not say whether it is borrowed from `x` or `y`
+help: consider introducing a named lifetime parameter
+      fn longest&lt;'a&gt;(x: &amp;'a str, y: &amp;'a str) -&gt; &amp;'a str</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li>缺少生命周期标注。</li>
+      <li>返回值含借用，但签名没有说明它借用自 <code>x</code> 还是 <code>y</code>。</li>
+      <li>编译器建议引入命名生命周期参数 <code>'a</code>，并把三处都标上。</li>
+    </ul>
+  </div>
+</div>
+
+<p>两个输入引用、一个返回引用时，编译器不能猜“返回的是哪一个”，所以必须显式写 <code>'a</code>。</p>
+
+<h3>2.4 返回值活不过较短的输入：E0597</h3>
+
+<p>把 <code>main</code> 改成下面这样（函数不变）：</p>
+
+<pre><code>fn main() {
+    let a = String::from("long string");
+    let r;
+    {
+        let b = String::from("xyz");
+        r = longest(&amp;a, &amp;b);
+    } // b 在这里 drop
+    println!("{r}"); // r 可能借用 b，不能再用
+}</code></pre>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0597]: `b` does not live long enough
+borrowed value does not live long enough
+`b` dropped here while still borrowed
+borrow later used here</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li><code>b</code> 活不够久；被借用的值活不够久。</li>
+      <li><code>b</code> 在仍被借用时被丢弃，而借用稍后还要使用。</li>
+    </ul>
+  </div>
+</div>
+
+<p>把 <code>println!("{r}")</code> 移到内层块里（在 b drop 之前）就合法。这正是 <code>longest</code> 签名在保护的事：返回值不能超过较短输入。</p>
+
+<div class="callout">
+  <b>精度补丁：</b>如果函数永远返回 <code>x</code>，可以写成 <code>fn first&lt;'a&gt;(x: &amp;'a str, y: &amp;str) -&gt; &amp;'a str</code>，只把 x 绑到 <code>'a</code>。但 <code>longest</code> 可能返回 y，所以必须把 y 也绑到同一个 <code>'a</code>。
+</div>
+
+<div class="quiz" data-quiz="0">
+  <h3>练习 1</h3>
+  <p><code>'a</code> 是什么？</p>
+  <div class="quiz-options">
+    <button data-choice="a">运行期保存的引用年龄值</button>
+    <button data-choice="b">编译期生命周期参数，表示引用有效期的约束</button>
+    <button data-choice="c">一种堆分配器</button>
+    <button data-choice="d">自动延长引用寿命的关键字</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="1">
+  <h3>练习 2</h3>
+  <div class="quiz-code">fn longest(x: &amp;str, y: &amp;str) -&gt; &amp;str {
+    if x.len() &gt; y.len() { x } else { y }
+}
+
+fn main() {
+    println!("{}", longest("abcd", "123"));
+}</div>
+  <p>编译这段代码会发生什么？</p>
+  <div class="quiz-options">
+    <button data-choice="a">编译错误 E0106：无法判断返回借用自 x 还是 y</button>
+    <button data-choice="b">编译通过，运行时选较长者</button>
+    <button data-choice="c">编译通过，返回 'static</button>
+    <button data-choice="d">运行期 panic</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<h2>3. 省略规则：为什么 <code>first_word</code> 不用写 <code>'a</code></h2>
+
+<h3>3.1 完整程序</h3>
+
+<pre><code>fn first_word(s: &amp;str) -&gt; &amp;str {
+    // 返回值借用自 s；省略规则把输出绑到 s
+    for (i, b) in s.bytes().enumerate() {
+        if b == b' ' {
+            return &amp;s[..i];
+        }
+    }
+    &amp;s[..] // 没有空格时返回整个 s
+}
+
+fn main() {
+    let text = String::from("hello world");
+    let word = first_word(&amp;text);
+    println!("{word}");
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>hello</code></pre>
+
+<h3>3.2 省略规则</h3>
+
+<ol>
+  <li>每个省略的<b>输入</b>生命周期各自成为一个参数。</li>
+  <li>如果恰好只有一个输入生命周期，返回值的省略生命周期 = 这个输入。</li>
+  <li>如果方法接收 <code>&amp;self</code> 或 <code>&amp;mut self</code>，返回值的省略生命周期 = <code>self</code> 的生命周期。</li>
+  <li>以上都不满足，返回值又含借用：必须显式写生命周期，否则 E0106。</li>
+</ol>
+
+<p><code>first_word</code> 等价于：</p>
+
+<pre><code>fn first_word&lt;'a&gt;(s: &amp;'a str) -&gt; &amp;'a str</code></pre>
+
+<p>只有一个输入引用 <code>s</code>，所以规则 2 把输出绑到 <code>s</code>。而 <code>longest</code> 有两个输入引用，规则 2 不适用，必须显式写 <code>'a</code>。</p>
+
+<h3>3.3 借用检查的另一面：E0502</h3>
+
+<p class="meta">这里沿用 3.1 的 <code>first_word</code>，只改 <code>main</code>。</p>
+
+<pre><code>fn main() {
+    let mut text = String::from("hello world");
+    let word = first_word(&amp;text);
+    text.clear();          // 不可变借用 word 还活着
+    println!("{word}");
+}</code></pre>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0502]: cannot borrow `text` as mutable
+because it is also borrowed as immutable
+immutable borrow occurs here
+mutable borrow occurs here
+immutable borrow later used here</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li>不能可变借用 <code>text</code>，因为它已经被不可变借用。</li>
+      <li><code>first_word(&amp;text)</code> 的不可变借用要持续到 <code>word</code> 最后一次使用。</li>
+      <li>把 <code>text.clear()</code> 放到 <code>println!("{word}")</code> 之后再试。</li>
+    </ul>
+  </div>
+</div>
+
+<p>生命周期和借用检查是同一套机制的两面：生命周期说明“引用和谁绑定”，借用检查确保“绑定期间 owner 不被 move/drop/可变借用”。</p>
+
+<div class="quiz" data-quiz="2">
+  <h3>练习 3</h3>
+  <p>为什么 <code>fn first_word(s: &amp;str) -&gt; &amp;str</code> 可以不写 <code>'a</code>？</p>
+  <div class="quiz-options">
+    <button data-choice="a">因为字符串字面量都是 'static</button>
+    <button data-choice="b">因为编译器自动把返回值变成 String</button>
+    <button data-choice="c">因为只有一个输入引用，省略规则把输出绑到 s</button>
+    <button data-choice="d">因为 &amp;str 没有生命周期</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<h2>4. 结构体持有引用：<code>Book&lt;'a&gt;</code></h2>
+
+<h3>4.1 完整程序</h3>
+
+<pre><code>struct Book&lt;'a&gt; {
+    author: &amp;'a str,
+    title: &amp;'a str,
+}
+
+impl&lt;'a&gt; Book&lt;'a&gt; {
+    fn new(author: &amp;'a str, title: &amp;'a str) -&gt; Self {
+        Self { author, title }
+    }
+
+    fn title(&amp;self) -&gt; &amp;str {
+        self.title // 省略规则 3：输出绑到 &amp;self
+    }
+}
+
+fn main() {
+    let author = String::from("George Orwell");
+    let title = String::from("1984");
+    let book = Book::new(&amp;author, &amp;title);
+    println!("{} by {}", book.title(), book.author);
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>1984 by George Orwell</code></pre>
+
+<ul>
+  <li><code>Book&lt;'a&gt;</code> 表示：这个 <code>Book</code> 实例不能比它借用的 <code>author</code> / <code>title</code> 活得更久。</li>
+  <li><code>impl&lt;'a&gt; Book&lt;'a&gt;</code>：为带生命周期参数的 <code>Book</code> 实现方法；<code>Self</code> 就是 <code>Book&lt;'a&gt;</code>。</li>
+  <li><code>fn title(&amp;self) -&gt; &amp;str</code>：方法省略规则把返回值绑到 <code>&amp;self</code>，也就是这个 book 的借用。</li>
+  <li>结构体本身不拥有字符串数据；它借用外部字符串。</li>
+</ul>
+
+<h3>4.2 实例活过 owner：E0597</h3>
+
+<pre><code>struct Book&lt;'a&gt; {
+    author: &amp;'a str,
+    title: &amp;'a str,
+}
+
+impl&lt;'a&gt; Book&lt;'a&gt; {
+    fn new(author: &amp;'a str, title: &amp;'a str) -&gt; Self {
+        Self { author, title }
+    }
+}
+
+fn main() {
+    let book;
+    {
+        let title = String::from("1984");
+        book = Book::new("George Orwell", &amp;title);
+    } // title 在这里 drop
+    println!("{}", book.title); // book 还在借用 title
+}</code></pre>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0597]: `title` does not live long enough
+borrowed value does not live long enough
+`title` dropped here while still borrowed
+borrow later used here</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li><code>title</code> 活不够久；被借用的值活不够久。</li>
+      <li><code>title</code> 在仍被借用时被丢弃，而借用稍后还要使用。</li>
+    </ul>
+  </div>
+</div>
+
+<table class="lifetime-table">
+  <tr><th>值</th><th>生命周期</th><th>说明</th></tr>
+  <tr><td><code>title</code></td><td>内层块</td><td>String 拥有数据</td></tr>
+  <tr><td><code>book</code></td><td>期望用到 println 之后</td><td>借用了 title，不能超过 title</td></tr>
+</table>
+
+<p>如果结构体想拥有字符串，就用 <code>String</code> 字段，不需要生命周期参数；如果只是想借用，保留 <code>&amp;'a str</code> 并接受“实例不能比 owner 活得久”的约束。</p>
+
+<div class="quiz" data-quiz="3">
+  <h3>练习 4</h3>
+  <div class="quiz-code">struct Book&lt;'a&gt; {
+    title: &amp;'a str,
+}
+
+fn main() {
+    let book;
+    {
+        let title = String::from("1984");
+        book = Book { title: &amp;title };
+    }
+    println!("{}", book.title);
+}</div>
+  <p>这段代码会怎样？</p>
+  <div class="quiz-options">
+    <button data-choice="a">自动延长 title 的生命周期</button>
+    <button data-choice="b">编译错误 E0597：title 活不够久</button>
+    <button data-choice="c">运行期 panic</button>
+    <button data-choice="d">自动把 title 复制到堆上</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<h2>5. <code>'static</code>：程序全程有效</h2>
+
+<h3>5.1 完整程序</h3>
+
+<pre><code>fn static_str() -&gt; &amp;'static str {
+    "hello" // 字面量在二进制里，程序全程有效
+}
+
+static GREETING: &amp;str = "hi"; // static 项的 &str 默认是 &'static str
+
+fn main() {
+    let a: &amp;'static str = "literal";
+    let b: &amp;'static str = GREETING;
+    println!("{a} {b} {}", static_str());
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>literal hi hello</code></pre>
+
+<ul>
+  <li><code>&amp;'static str</code> 表示这个借用在整个程序运行期间都有效。</li>
+  <li>字符串字面量、<code>static</code> 项的数据通常活到程序结束，所以可以得到 <code>&amp;'static str</code>。</li>
+  <li><code>'static</code> 不是“延长寿命”的开关；它是对数据有效期的承诺。</li>
+</ul>
+
+<h3>5.2 局部数据不能冒充 <code>'static</code></h3>
+
+<pre><code>fn main() {
+    let owned = String::from("hi");
+    let r: &amp;'static str = &amp;owned; // owned 只活到 main 结束
+    println!("{r}");
+}</code></pre>
+
+<div class="errpair">
+  <div>
+    <b>英文原文</b>
+    <pre><code>error[E0597]: `owned` does not live long enough
+type annotation requires that `owned` is borrowed for `'static`
+`owned` dropped here while still borrowed</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li><code>owned</code> 活不够久。</li>
+      <li>类型标注要求 <code>owned</code> 被借用 <code>'static</code> 那么久。</li>
+      <li><code>owned</code> 在仍被借用时被丢弃。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout warn">
+  <b>别把两个概念混了：</b><br>
+  <code>static GREETING: &amp;str = "hi";</code> 里的 <b>static</b> 是“固定地址的全局存储项”；<br>
+  <code>&amp;'static str</code> 里的 <b>'static</b> 是“借用有效期到程序结束”。<br>
+  两者常一起出现，但不是同一件事。
+</div>
+
+<div class="callout">
+  <b>进阶注脚：</b><code>T: 'static</code> 表示“T 不包含短借用的引用”，不是“T 的值永远不 drop”。<code>String</code> 满足 <code>'static</code>，但局部 <code>String</code> 仍会在作用域结束时 drop。<code>Box&lt;dyn Error&gt;</code> 默认也带 <code>'static</code> 约束；errors5 的错误类型都是自包含的，所以没问题。
+</div>
+
+<div class="quiz" data-quiz="4">
+  <h3>练习 5</h3>
+  <p><code>&amp;'static str</code> 的含义是？</p>
+  <div class="quiz-options">
+    <button data-choice="a">引用必须指向 static 变量，不能是字面量</button>
+    <button data-choice="b">引用会自动堆分配</button>
+    <button data-choice="c">运行期会记录引用的年龄</button>
+    <button data-choice="d">引用在整个程序期间有效，不是延长寿命的开关</button>
+  </div>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score" id="score">本轮得分：0 / 5</p>
+
+<h2>6. 收束：错误编号与写法选择</h2>
+
+<table>
+  <tr><th>错误</th><th>典型场景</th><th>修法</th></tr>
+  <tr><td><b>E0106</b> missing lifetime specifier</td><td>多个输入引用、返回引用，或没有输入却返回引用</td><td>显式写 <code>&lt;'a&gt;</code>，或返回拥有所有权的值</td></tr>
+  <tr><td><b>E0515</b> cannot return reference to local</td><td>返回局部 <code>String</code> 的切片</td><td>返回 <code>String</code>，或让调用者提供缓冲区</td></tr>
+  <tr><td><b>E0597</b> does not live long enough</td><td>owner 先 drop，借用后用；局部数据标成 <code>'static</code></td><td>让 owner 活到引用最后一次使用；不要冒充 <code>'static</code></td></tr>
+  <tr><td><b>E0502</b> borrow overlap</td><td>不可变借用还活着时可变借用 owner</td><td>等借用最后一次使用之后再改</td></tr>
+</table>
+
+<table>
+  <tr><th>场景</th><th>写法</th></tr>
+  <tr><td>返回入参的切片，只有一个输入引用</td><td><code>fn f(s: &amp;str) -&gt; &amp;str</code>（省略规则 2）</td></tr>
+  <tr><td>多个输入中选一个返回</td><td><code>fn f&lt;'a&gt;(x: &amp;'a str, y: &amp;'a str) -&gt; &amp;'a str</code></td></tr>
+  <tr><td>返回字面量 / <code>static</code> 数据</td><td><code>-&gt; &amp;'static str</code></td></tr>
+  <tr><td>结构体借用外部字符串</td><td><code>struct S&lt;'a&gt; { field: &amp;'a str }</code></td></tr>
+  <tr><td>函数内部新造字符串</td><td>返回 <code>String</code>，或写入调用者提供的缓冲区</td></tr>
+</table>
+
+<p><b>三句话总结：</b></p>
+<ol>
+  <li>生命周期标注是编译期契约，不是运行期字段，也不能延长数据寿命。</li>
+  <li><code>longest</code> 的 <code>'a</code> 是“两个输入都还活着的那段”，所以返回值不能超过较短输入。</li>
+  <li>只有一个输入或方法是 <code>&amp;self</code> 时，省略规则会把返回值绑到它；否则必须显式写生命周期。</li>
+</ol>
+
+<p><b>常见误区：</b></p>
+<ul>
+  <li>“生命周期标注能让局部变量活到函数外” → 不能；E0515 / E0597 会拦住。</li>
+  <li>“<code>'a</code> 是运行期保存的年龄” → 是编译期参数。</li>
+  <li>“<code>longest</code> 要求 x、y 原本就是同一个生命周期” → 不要求；<code>'a</code> 取两者都覆盖的区间。</li>
+  <li>“结构体存引用不需要生命周期” → 需要 <code>&lt;'a&gt;</code>，实例不能超过被借用数据。</li>
+  <li>“<code>'static</code> 就是 static 变量” → 一个是生命周期，一个是存储项。</li>
+  <li>“返回 <code>&amp;str</code> 就是 <code>'static</code>” → 只有字面量/static 才是；入参切片返回的是入参的生命周期。</li>
+</ul>
+
+<h2>7. 课后任务：CP1（只交这一项）</h2>
+
+<p><b>先读</b>：The Book 10.3 <i>Validating References with Lifetimes</i>；Rust By Example 的 Lifetimes 章节作为对照。读完再合上课程默写，最后对照修正；有偏差标“曾误→正解”。</p>
+
+<p>CP1 是一次提交：三条笔记 + 两个探针。探针是笔记的证据，不另算任务；quiz 不计入 CP1。CP2（rustlings lifetimes1–3）和 CP3（WoL 借用视图）等 CP1 通过后再发。</p>
+
+<h3>笔记 1：<code>'a</code> 与 <code>longest</code></h3>
+<ul>
+  <li><code>'a</code> 是什么？它是运行期值还是编译期参数？</li>
+  <li><code>longest&lt;'a&gt;(x: &amp;'a str, y: &amp;'a str) -&gt; &amp;'a str</code> 里 <code>'a</code> 约束了谁？为什么返回值不能超过较短输入？</li>
+  <li>为什么加生命周期标注不能修复“返回局部 String 切片”？</li>
+</ul>
+
+<h3>笔记 2：省略规则</h3>
+<ul>
+  <li>写出三条省略规则；<code>first_word(s: &amp;str) -&gt; &amp;str</code> 为什么符合规则 2？</li>
+  <li><code>longest(x: &amp;str, y: &amp;str) -&gt; &amp;str</code> 为什么必须显式写 <code>'a</code>？</li>
+  <li>方法 <code>fn title(&amp;self) -&gt; &amp;str</code> 的输出绑到谁？</li>
+</ul>
+
+<h3>笔记 3：结构体与 <code>'static</code></h3>
+<ul>
+  <li><code>Book&lt;'a&gt;</code> 实例和 <code>author</code>/<code>title</code> 的 owner 谁必须活得更久？</li>
+  <li><code>static</code> 存储项和 <code>'static</code> 生命周期有什么区别？</li>
+  <li>为什么局部 <code>String</code> 不能借成 <code>&amp;'static str</code>？</li>
+</ul>
+
+<h3>探针 A / B</h3>
+<ol>
+  <li><b>探针 A</b>：把第 2 节的 <code>longest</code> 完整程序存成 <code>longest.rs</code>，运行并贴输出；删掉 <code>&lt;'a&gt;</code> 和三处 <code>'a</code>，编译并贴 E0106 原文 + 中文；恢复后，把 <code>main</code> 改成第 2.4 节的内层块版本，贴 E0597。</li>
+  <li><b>探针 B</b>：把第 4 节的 <code>Book</code> 完整程序存成 <code>book.rs</code>，运行并贴输出；把 <code>title</code> 放进内层块、在块外打印 <code>book.title</code>，贴 E0597；再把第 5.2 节的局部 <code>String</code> 借成 <code>&amp;'static str</code>，贴报错并说明它和 E0597 的关系。</li>
+</ol>
+
+<h3>通过标准</h3>
+<ul>
+  <li>三条笔记都用自己的话；能说清 <code>'a</code> 是编译期参数、不是运行期值。</li>
+  <li>能解释 <code>longest</code> 的返回值和较短输入的关系；E0106 / E0515 / E0597 的触发条件能对上。</li>
+  <li>能区分 static 存储项和 <code>'static</code> 生命周期，不把 <code>'static</code> 当“延长寿命”。</li>
+  <li>两个探针的命令、输出、错误原文和中文对照齐全。</li>
+</ul>
+
+<p>不通过我会用探针重讲，不加新概念；通过后再开 CP2。</p>
+
+<h2>8. 延伸与预告</h2>
+
+<p><b>主要来源</b>（建议按顺序读）：<br>
+<a href="https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html" target="_blank">The Rust Book 10.3: Validating References with Lifetimes</a>（本课主教材：生命周期标注、省略规则、结构体生命周期）<br>
+<a href="https://doc.rust-lang.org/rust-by-example/scope/lifetime.html" target="_blank">Rust By Example: Lifetimes</a>（更多最小例子：函数、结构体、方法、static）<br>
+<a href="https://doc.rust-lang.org/reference/lifetime-elision.html" target="_blank">Rust Reference: Lifetime elision</a>（三条省略规则的规范出处）<br>
+<a href="https://github.com/rust-lang/rustlings" target="_blank">rustlings 16_lifetimes</a>（CP2 配套：lifetimes1–3）</p>
+
+<p><b>下一课预告</b>：CP2 做 rustlings <code>lifetimes1–3</code>；CP3 在 WoL 里加一个借用的 <code>MacView&lt;'a&gt;</code> 视图（OUI 不分配）。之后再进入集合与 <code>HashMap</code>。</p>
+
+<p><b>随时提问</b>：为什么 <code>longest</code> 要两个 <code>'a</code>、<code>Book</code> 为什么不能活过 title、<code>'static</code> 和 static 到底差在哪——直接问。我是你的老师，答疑是课程的一部分。</p>
+
+<div class="lesson-nav">
+  <p>上一课：<a href="0009-traits-and-generics.html">第九课：trait 与泛型</a><br>
+  参考：<a href="../reference/glossary.html">术语表</a> · <a href="../setup-rust-windows.md">环境搭建指南</a> · <a href="../MISSION.md">MISSION.md</a> · <a href="../RESOURCES.md">RESOURCES.md</a> · <a href="../demo/wol/README.md">WoL 项目</a> · <a href="../demo/button-model/README.md">button-model</a></p>
+</div>
+
+<script>
+/* ============================================================
+   互动练习逻辑（原生 JS，无依赖）
+   5 道题；答过锁定；正确项高亮；总分 /5。
+   ============================================================ */
+
+var QUIZ_ANSWERS = [
+  {
+    correct: "b",
+    okMsg: "对。'a 是编译期生命周期参数，表示引用有效期的约束；运行期没有这个字段。",
+    errMsg: "不对。'a 不是运行期年龄值，也不是堆分配器或延长寿命的关键字；它是编译期生命周期参数。"
+  },
+  {
+    correct: "a",
+    okMsg: "对。两个输入引用、一个返回引用，编译器不知道返回借用自 x 还是 y，必须显式写生命周期；E0106。",
+    errMsg: "不对。编译器不能猜返回借用自哪一个输入；两个输入引用时省略规则不适用，会报 E0106。"
+  },
+  {
+    correct: "c",
+    okMsg: "对。只有一个输入引用，省略规则 2 把输出生命周期绑到 s；等价于 fn first_word<'a>(s: &'a str) -> &'a str。",
+    errMsg: "不对。不是因为字面量或返回 String；是因为只有一个输入引用，省略规则把输出绑到 s。"
+  },
+  {
+    correct: "b",
+    okMsg: "对。Book<'a> 的实例不能超过被借用的 title；title 在内层块结束时 drop，book 还要打印，所以 E0597。",
+    errMsg: "不对。生命周期不会自动延长，也不会复制到堆；title 先 drop 而 book 仍借用它，报 E0597。"
+  },
+  {
+    correct: "d",
+    okMsg: "对。&'static str 表示借用在整个程序期间有效；它可以指向字面量或 static 项，但不是延长寿命的开关。",
+    errMsg: "不对。'static 不是堆分配或运行期年龄，也不要求必须是 static 变量；它表示程序全程有效的借用。"
+  }
+];
+
+var answered = { 0: false, 1: false, 2: false, 3: false, 4: false };
+var score = 0;
+
+document.querySelectorAll(".quiz").forEach(function (quiz) {
+  var quizId = Number(quiz.dataset.quiz);
+  var buttons = quiz.querySelectorAll("button");
+  var feedback = quiz.querySelector(".quiz-feedback");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (answered[quizId]) { return; }
+      answered[quizId] = true;
+
+      var picked = button.dataset.choice;
+      var config = QUIZ_ANSWERS[quizId];
+      var isRight = (picked === config.correct);
+
+      buttons.forEach(function (b) { b.disabled = true; });
+      if (isRight) {
+        button.classList.add("correct");
+        score = score + 1;
+      } else {
+        button.classList.add("wrong");
+        buttons.forEach(function (b) {
+          if (b.dataset.choice === config.correct) { b.classList.add("correct"); }
+        });
+      }
+
+      feedback.textContent = (isRight ? "✔ " : "✘ ") + (isRight ? config.okMsg : config.errMsg);
+      feedback.classList.add(isRight ? "ok" : "err");
+
+      document.getElementById("score").textContent = "本轮得分：" + score + " / 5";
+
+      if (score === 5) {
+        document.getElementById("score").textContent =
+          "本轮得分：5 / 5 —— 全对。生命周期这一关你过了，CP1 见。";
+      }
+    });
+  });
+});
+</script>
+
+</body>
+</html>

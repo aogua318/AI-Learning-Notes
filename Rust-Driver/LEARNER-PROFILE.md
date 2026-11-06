@@ -20,7 +20,7 @@
 2. **主动交叉验证**：用 variables5 验证 variables4 的结论；实测 `price = price - 10` 报错验证不可变规则；指出"functions5 刚好说明分号的作用"。习惯用第二个实验确认第一个结论。
 3. **主动建立知识连接**：用 Python 引用计数类比 Drop（类比本身是错的，但行为说明他在主动往旧知识上挂新知识——教学时应先肯定连接意图，再纠正映射）。
 4. **抽象层级爬升快，且能自主综合规则**：几轮之内从"栈/堆"的具体框架爬到"编译期数据流分析"的机制层；第二课追问弧线中自主综合出 NLL 的完整操作化规则（探针证实），独立重发现"排他 = 编译期互斥"的并发洞察（并自行补上数据竞争与同步的边界）。
-5. **进度持续超前且会自选加练**：语言预备期原计划 4 周，实际已通关第一至九课全部作业（第五课 const/static、定长魔术包；第六课模块拆分与 rustlings 10_modules；第七课 rustlings 07/08 + button-model；第八课 Option/Result + WoL 错误处理；第九课 trait/泛型 + errors4–6 + button-model trait 集成）；strings3 还自行用了迭代器写法。
+5. **进度持续超前且会自选加练**：语言预备期原计划 4 周，实际已通关第一至九课全部作业（第五课 const/static、定长魔术包；第六课模块拆分与 rustlings 10_modules；第七课 rustlings 07/08 + button-model；第八课 Option/Result + WoL 错误处理；第九课 trait/泛型 + errors4–6 + button-model trait 集成）；第十课《生命周期》已发布，CP1 待交；strings3 还自行用了迭代器写法。
 
 ### 固有模式（教学时要预判，不是缺陷）
 
@@ -82,8 +82,9 @@
 - **第八课批阅要点**：CP1 两轮措辞修正——Option 是包装不是扩展（`None | Some(T)`，T 不变）、`ok_or` 参数是错误值、`panic` 不是断言、`?` 是提前返回并用 `From` 转换；CP2 options1–3 / errors1–3 六题通过，options2 第一版 `pop().unwrap()` 测试通过但无 `None` 哨兵时 panic（探针 exit 101），已改 `Some(Some(integer))`；errors2 `map` 版本正确，`?` 版本可读；errors3 `main -> Result`。CP3 button-model 输出 `no event` / `pressed` / `held` / `released`；WoL 正常 102 字节、坏 MAC `Error: Length` / `Error: NonHex`（exit 1）。解释修正：protocol 不用 unwrap 因外部输入失败可预期；`unwrap_or(0)` 会静默填 0 生成错误包；`Result` 交给调用者处理。
 - **第九课 CP1 批阅要点**：trait 不是泛型（契约 vs 参数化代码）；impl 添加方法体，签名在 trait；trait object 编译期确定 vtable/生成构造代码，运行期组装胖指针；“谁决定调用”写编译器（单态化）vs 运行期 vtable；`?` 是 `From::from(e)`，不是 `Box::from(e)`；`Termination` 条件为 `T: Termination, E: Debug`，`fn main() -> Result<(), E: Debug>` 不是合法签名；`let f: impl Fn(...)` 实测 E0562（impl Trait 只允许参数/返回位置）；Fn 层级解释改为“Fn 也满足 FnMut 的调用方式，FnMut 不要求修改捕获”；`map_err` 与 collect 无固定关系；errors5 的 `CreationError` 是 enum 不是 unit struct。探针 A/B + fn_probe + termination_fix 已落盘 `demo/trait-probe/`，A 输出 generic real=pressed fake=released / dyn pressed/released + E0599；B 输出 `Error: ParseIntError { kind: InvalidDigit }`、exit 1；fn_probe 输出 Fn 5 5 / FnMut (1,2) / FnOnce hi。探针由 AI 代跑并留证。
 - **第九课 CP2/CP3 批阅要点**：errors4 初版“三个分支包装成一个 Result”修正为三个分支各自直接构造 `Ok`/`Err`；errors5 初版只说 `impl Error for CreationError`，补齐 `ParseIntError` 也实现 `Error`、`?` 通过 `From::from` 装箱 `Box<dyn Error>`、`Result<T: Termination, E: Debug>` 的 Termination 条件；errors6 保留 `ParseIntError` 的 `kind()`/可匹配价值。CP3 初版把“`&dyn` 长度固定、`B` 长度不固定”当作 Vec 异构的原因，修正为 `Vec<T>` 要求同一具体元素类型、`&dyn` 是同一胖指针类型；并把动态分发从 `vec![...]` 纠正到 `input.is_pressed()`。CP3 输出四行不变；`cargo fmt/check/run` 通过，`_` 改 `None`，去掉尾随空格。
-- **rustlings 进度**：strings1–4、modules1–3、structs1–3、enums1–3、options1–3、errors1–6 通过；runner 已前进到 `generics1`（hashmaps1–3 仍暂跳，集合课再补）。
-- **第九课**：**《trait 与泛型》CP1–CP3 全部通过**（`lessons/0009-traits-and-generics.html`）——trait 契约、泛型/单态化/静态分发、trait object/`Box`/动态分发、`Debug`/`Display`/`Error`/`From`/`Termination`、`Box<dyn Error>`（errors5）、`Fn`/`FnMut`/`FnOnce`。产物：`demo/trait-probe/`、`demo/button-model`、`my-notes/0009`、`learning-records/0009`；术语表晋升 19 条。下一课按长期路线进入生命周期与集合。
+- **rustlings 进度**：strings1–4、modules1–3、structs1–3、enums1–3、options1–3、errors1–6 通过；runner 已前进到 `generics1`（hashmaps1–3 仍暂跳，集合课再补；lifetimes1–3 等第十课 CP2）。
+- **第九课**：**《trait 与泛型》CP1–CP3 全部通过**（`lessons/0009-traits-and-generics.html`）——trait 契约、泛型/单态化/静态分发、trait object/`Box`/动态分发、`Debug`/`Display`/`Error`/`From`/`Termination`、`Box<dyn Error>`（errors5）、`Fn`/`FnMut`/`FnOnce`。产物：`demo/trait-probe/`、`demo/button-model`、`my-notes/0009`、`learning-records/0009`；术语表晋升 19 条。
+- **第十课**：**《生命周期》已发布**（`lessons/0010-lifetimes.html`）——`'a` 编译期参数、`longest` 与较短输入、三条省略规则、`Book<'a>`、`'static` vs static 存储项；E0106/E0515/E0597/E0502。CP1 三条笔记 + 探针 A/B 待交；CP2 rustlings lifetimes1–3、CP3 WoL `MacView<'a>` 等 CP1 通过后发。
 - **长期路线**：语言预备期（进度超前）→ 格斗摇杆固件（Pico + rp2040-hal）→ USB 网络检测盒 → Linux Rust 驱动源码研读。
 
 ## 六、更新规则

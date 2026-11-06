@@ -20,6 +20,8 @@
   Result/Ok/Err、unwrap/expect、`?` 传播与 From 转换、main 返回 Result、panic 与 Result 的选择判据。用途：第八课主教材；rustlings 12_options / 13_error_handling 配套。第九课已回收 `From` / `Debug` / `Termination` 约束。
 - [The Rust Book 10.1 Generic Data Types](https://doc.rust-lang.org/book/ch10-01-syntax.html) / [10.2 Traits: Defining Shared Behavior](https://doc.rust-lang.org/book/ch10-02-traits.html) / [17.2 Trait Objects](https://doc.rust-lang.org/book/ch17-02-trait-objects.html)
   泛型参数与单态化、trait 定义/约束/实现、trait object 与动态分发的原文出处。用途：第九课主教材；`Box<dyn Error>` 与 rustlings errors4–6 配套。
+- [The Rust Book 10.3 Validating References with Lifetimes](https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html) / [Rust By Example: Lifetimes](https://doc.rust-lang.org/rust-by-example/scope/lifetime.html) / [Rust Reference: Lifetime elision](https://doc.rust-lang.org/reference/lifetime-elision.html)
+  生命周期标注、函数/结构体生命周期、三条省略规则与 `'static` 的原文出处。用途：第十课主教材；rustlings 16_lifetimes 配套。
 - [std::convert::From](https://doc.rust-lang.org/std/convert/trait.From.html) / [std::fmt::Debug](https://doc.rust-lang.org/std/fmt/trait.Debug.html) / [std::fmt::Display](https://doc.rust-lang.org/std/fmt/trait.Display.html) / [std::error::Error](https://doc.rust-lang.org/std/error/trait.Error.html) / [std::process::Termination](https://doc.rust-lang.org/std/process/trait.Termination.html) / [std::boxed::Box](https://doc.rust-lang.org/std/boxed/struct.Box.html)
   `From` 的方向与 `?` 转换、`Debug` / `Display` 的边界、`Error: Debug + Display`、`Termination` 对 `main` 返回类型的要求、`Box<dyn Error>` 与 `Box<dyn Trait>` 的胖指针。用途：第九课查表与 CP1 核对。
 - [std::ops::Fn](https://doc.rust-lang.org/std/ops/trait.Fn.html) / [FnMut](https://doc.rust-lang.org/std/ops/trait.FnMut.html) / [FnOnce](https://doc.rust-lang.org/std/ops/trait.FnOnce.html)
@@ -27,7 +29,7 @@
 - [std::option::Option](https://doc.rust-lang.org/std/option/enum.Option.html) / [std::result::Result](https://doc.rust-lang.org/std/result/enum.Result.html) / [Rust Reference: `?` operator](https://doc.rust-lang.org/reference/expressions/operator-expr.html#the-question-mark-operator) ✅
   Option/Result 的方法签名（重点看接收者是 self 还是 &self）与 `?` 的规范定义。用途：第八课查表与 CP1 原文核对。
 - [Rustlings（rust-lang 官方练习，MIT）](https://github.com/rust-lang/rustlings) ✅
-  小型练习集，编译错误即反馈。用途：与 The Book 同步刷，move_semantics 系列练习是第一课的直接配套；errors4–6 是第九课 CP2 配套。
+  小型练习集，编译错误即反馈。用途：与 The Book 同步刷，move_semantics 系列练习是第一课的直接配套；errors4–6 是第九课 CP2 配套；lifetimes1–3 是第十课 CP2 配套。
 - [rp2040-hal API 文档（docs.rs）](https://docs.rs/rp2040-hal/latest/rp2040_hal/) ✅
   RP2040 的 HAL，实现 embedded-hal traits，含 usb / gpio / spi / i2c / pio 等模块；注意官方声明"API will remain volatile until 1.0.0"。用途：摇杆固件的主参考，写 USB HID 时查 usb 模块。
 - [rp2040-project-template（rp-rs 官方模板）](https://github.com/rp-rs/rp2040-project-template) ✅
