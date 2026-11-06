@@ -38,3 +38,23 @@ pin 15: released
 - false/false（无事件）→ `None`。
 
 `main` 用 `match` 同时处理 `Some(...)` 和 `None`，所以 false/false 不再伪装成 `Held`。完整任务见 [lessons/0008-option-and-error-handling.html](../../lessons/0008-option-and-error-handling.html)。
+
+## 第九课 CP3：trait、泛型与动态分发
+
+在状态机保持不变的前提下，新增输入抽象：
+
+- `trait ButtonInput { fn is_pressed(&self) -> bool; }`；
+- `RealPin`（`pin == 15` 模拟按下）与 `FakePin`（保存 `pressed`）两个实现；
+- 泛型 `read_button<B: ButtonInput>(&B)`：静态分发；
+- `Vec<(&dyn ButtonInput, u32)>`：异构集合，循环里的 `input.is_pressed()` 走动态分发。
+
+`main` 的四个采样仍是 `false → true → true → false`，`ButtonState` / `update` 没有改动，所以输出与第八课完全一致：
+
+```text
+no event
+pin 15: pressed
+pin 15: held 20 ms
+pin 15: released
+```
+
+`Vec<T>` 要求所有元素是同一个具体类型；`&dyn ButtonInput` 是同一个胖指针类型，可以指向不同实现，因此 `Vec<&dyn ButtonInput>` 能同时放 `RealPin` 和 `FakePin`。完整课程见 [lessons/0009-traits-and-generics.html](../../lessons/0009-traits-and-generics.html)。

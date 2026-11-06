@@ -281,6 +281,120 @@
   <dd class="avoid">避免：异常、错误返回值、可恢复错误</dd>
 </dl>
 
+<dl class="term">
+  <dt>泛型（generics）</dt>
+  <dd>用类型参数写一次代码，编译期对具体类型特化；函数、结构体、枚举都可以泛型。Rust 通过单态化实现静态分发。</dd>
+  <dd class="avoid">避免：运行期类型替换、泛型等于 trait</dd>
+</dl>
+
+<dl class="term">
+  <dt>类型参数（type parameter）</dt>
+  <dd>泛型声明里的占位类型，如 <code>&lt;B&gt;</code>；调用点填入具体类型。与生命周期参数（<code>'a</code>）是两类参数。</dd>
+  <dd class="avoid">避免：普通变量、运行期参数</dd>
+</dl>
+
+<dl class="term">
+  <dt>行为契约（trait）</dt>
+  <dd>一组方法签名的契约，由具体类型用 <code>impl Trait for Type</code> 实现；不携带数据字段，不是类型继承；可以有默认方法与 supertrait。trait 本身不是可创建值的具体类型，<code>dyn Trait</code> 才是 trait object 类型。</dd>
+  <dd class="avoid">避免：父类、接口继承、类型本身</dd>
+</dl>
+
+<dl class="term">
+  <dt>trait 实现（impl Trait for Type）</dt>
+  <dd>为具体类型提供 trait 要求的方法体；签名在 trait 中声明，impl 的方法头必须兼容；默认方法可省略。不是继承，不复制字段。</dd>
+  <dd class="avoid">避免：重写父类方法、泛型实现</dd>
+</dl>
+
+<dl class="term">
+  <dt>trait 约束（trait bound）</dt>
+  <dd>泛型参数上的编译期要求，如 <code>B: ButtonInput</code>；保证泛型体内可以调用契约方法；不是运行期检查。也可写成 <code>where B: ButtonInput</code>。</dd>
+  <dd class="avoid">避免：关键字、运行期检查</dd>
+</dl>
+
+<dl class="term">
+  <dt>supertrait（超级 trait）</dt>
+  <dd>trait 之间的约束，如 <code>Error: Debug + Display</code>、<code>Fn: FnMut</code>；实现子 trait 前必须满足父 trait。不是类继承。</dd>
+  <dd class="avoid">避免：父类、继承树</dd>
+</dl>
+
+<dl class="term">
+  <dt>单态化（monomorphization）</dt>
+  <dd>编译期为每个具体类型生成一份泛型代码的特化版本；对应静态分发。运行期没有类型查表；代码体积可能增大。</dd>
+  <dd class="avoid">避免：运行期特化、类型擦除</dd>
+</dl>
+
+<dl class="term">
+  <dt>静态分发（static dispatch）</dt>
+  <dd>编译期确定调用目标（通常由泛型单态化实现）；没有运行期 vtable 查找，通常更容易内联；代码体积可能增大。</dd>
+  <dd class="avoid">避免：运行期查表、装箱调用</dd>
+</dl>
+
+<dl class="term">
+  <dt>动态分发（dynamic dispatch）</dt>
+  <dd>通过 trait object 的 vtable 在运行期查函数地址；支持 <code>&amp;dyn Trait</code> / <code>Box&lt;dyn Trait&gt;</code> 和异构集合；有间接调用开销，较难内联。</dd>
+  <dd class="avoid">避免：单态化、编译期绑定</dd>
+</dl>
+
+<dl class="term">
+  <dt>trait 对象（trait object）</dt>
+  <dd>unsized 的 <code>dyn Trait</code> 值，必须放在 <code>&amp;</code> 或 <code>Box</code> 后面；擦除具体类型但保留 vtable。它不是 trait 本身，而是一个可以指向不同实现者的类型。</dd>
+  <dd class="avoid">避免：trait 本身、具体类型</dd>
+</dl>
+
+<dl class="term">
+  <dt>胖指针（fat pointer）</dt>
+  <dd>数据指针 + 附加元数据的指针：<code>&amp;[T]</code> 是地址 + 长度，<code>&amp;dyn Trait</code> / <code>Box&lt;dyn Trait&gt;</code> 是数据 + 函数表。具体类型 <code>Box&lt;T&gt;</code> 是细指针。</dd>
+  <dd class="avoid">避免：普通指针、切片本身</dd>
+</dl>
+
+<dl class="term">
+  <dt>装箱错误（Box&lt;dyn Error&gt;）</dt>
+  <dd>拥有堆上 trait object 的错误类型；<code>dyn Error</code> 可以装任何实现 <code>Error</code> 的错误。<code>?</code> 通过 <code>From&lt;E&gt; for Box&lt;dyn Error&gt;</code> 装箱；<code>main</code> 返回它依赖 <code>Result</code> 的 <code>Termination</code> 实现与 <code>Box&lt;dyn Error&gt;: Debug</code>。no_std 无分配器时用不了。</dd>
+  <dd class="avoid">避免：所有场景通用、库 API 首选</dd>
+</dl>
+
+<dl class="term">
+  <dt>调试格式化（Debug）</dt>
+  <dd>用 <code>{:?}</code> 打印的 trait；<code>#[derive(Debug)]</code> 自动实现；<code>Result::unwrap</code> 要求错误类型 <code>E: Debug</code>；<code>main</code> 返回 <code>Err</code> 时用 Debug 打印。格式不保证稳定，不适合用户消息。</dd>
+  <dd class="avoid">避免：Display、用户可读格式</dd>
+</dl>
+
+<dl class="term">
+  <dt>用户格式化（Display）</dt>
+  <dd>用 <code>{}</code> / <code>to_string()</code> 打印的 trait；<code>Error</code> 的 supertrait；<code>Option</code> / <code>Result</code> 没有实现 Display。<code>main</code> 的错误打印走 Debug，不走 Display。</dd>
+  <dd class="avoid">避免：Debug、调试输出</dd>
+</dl>
+
+<dl class="term">
+  <dt>错误契约（Error）</dt>
+  <dd>标准库错误 trait，supertrait 为 <code>Debug + Display</code>；实现者必须同时具备两者，空 <code>impl Error for Type {}</code> 即可使用默认方法。对象安全，可装箱为 <code>Box&lt;dyn Error&gt;</code>。</dd>
+  <dd class="avoid">避免：异常、错误码</dd>
+</dl>
+
+<dl class="term">
+  <dt>值转换（From）</dt>
+  <dd><code>impl From&lt;A&gt; for B</code> 定义 A → B 的值转换：<code>B::from(a)</code> / <code>a.into()</code>。Result 的 <code>?</code> 用它转换错误类型；不可失败，可能失败用 <code>TryFrom</code>。不是子类型替换或隐式转换。</dd>
+  <dd class="avoid">避免：as 强制转换、双向类型替换</dd>
+</dl>
+
+<dl class="term">
+  <dt>终止（Termination）</dt>
+  <dd>main 返回类型要实现的标准库 trait；<code>()</code> 与 <code>Result&lt;T: Termination, E: Debug&gt;</code> 实现它。<code>Ok</code> 退出 0；<code>Err</code> 用 Debug 打印 <code>Error: ...</code> 并退出 1。</dd>
+  <dd class="avoid">避免：Result 无条件实现、Display 打印</dd>
+</dl>
+
+<dl class="term">
+  <dt>闭包调用 trait（Fn / FnMut / FnOnce）</dt>
+  <dd>描述闭包如何使用捕获环境：<code>Fn</code> 接收 <code>&amp;self</code>、只读、可多次；<code>FnMut</code> 接收 <code>&amp;mut self</code>、可变、可多次；<code>FnOnce</code> 接收 <code>self</code>、消耗、一次。层级为 <code>Fn: FnMut: FnOnce</code>。</dd>
+  <dd class="avoid">避免：函数指针、按调用次数选 trait 的唯一依据</dd>
+</dl>
+
+<dl class="term">
+  <dt>生命周期（lifetime）与 'static</dt>
+  <dd>生命周期标注描述引用的有效范围；<code>'static</code> 表示借用在整个程序期间有效，不是“延长寿命”的开关，也不是 <code>static</code> 存储项。<code>&amp;'static str</code> 常见于字符串字面量；省略规则会把 <code>-&gt; &amp;str</code> 绑定到输入。完整规则留到生命周期课。</dd>
+  <dd class="avoid">避免：static 变量、生命延长器</dd>
+</dl>
+
 <h2>嵌入式与硬件</h2>
 
 <dl class="term">
@@ -358,7 +472,7 @@
 </dl>
 
 <hr>
-<p class="meta">生命周期（lifetime）/ const fn 等词条，待对应课程练习完成后晋升至此。<br>
+<p class="meta">生命周期（lifetime）已随第九课晋升；const fn 等词条待对应课程练习完成后晋升至此。<br>
 术语有争议或想改定义，直接告诉我——这份表的措辞以你用得顺手为准。</p>
 
 </body>

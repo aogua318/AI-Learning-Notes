@@ -13,10 +13,12 @@
   .errpair {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    align-items: stretch;
     gap: 0.75rem;
     margin: 1rem 0;
   }
   .errpair > div {
+    min-width: 0;                 /* 允许网格列收缩，避免长错误行把列撑宽 */
     border: 1px solid var(--line);
     border-radius: 6px;
     padding: 0.65rem 0.85rem;
@@ -25,9 +27,19 @@
   }
   .errpair > div.zh { background: var(--card-bg); }
   .errpair b { display: block; margin-bottom: 0.35rem; }
-  .errpair pre { margin: 0.3rem 0 0; padding: 0.55rem 0.7rem; border: 0; background: transparent; }
+  .errpair pre {
+    margin: 0.3rem 0 0;
+    padding: 0.55rem 0.7rem;
+    border: 0;
+    background: transparent;
+    white-space: pre-wrap;        /* 错误原文在框内换行，不横向撑破 */
+    overflow-wrap: anywhere;
+  }
   .errpair ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
-  @media (max-width: 640px) { .errpair { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) {
+    .errpair { grid-template-columns: 1fr; }
+    .errpair > div { min-height: 6.2rem; }  /* 窄屏上下两框高度更均衡 */
+  }
 
   /* 决策表：让“选哪个”一眼可见 */
   .decision td:first-child { width: 46%; }
@@ -37,7 +49,7 @@
 
 <div class="lesson-meta">
   <span>课程 0009</span>
-  <span>预计 40–45 分钟（可在第 2 节后停一次）</span>
+  <span>预计 50–60 分钟（示例完整，可分段读；第 2 节后停一次）</span>
   <span>前置：第八课 CP1–CP3 完成</span>
   <span>阶段：语言预备期（第 9 课）</span>
 </div>
@@ -136,29 +148,74 @@
 
 <h3>1.1 两份一模一样的函数</h3>
 
-<p>假设有两个按键来源：真实引脚和测试用的假引脚。先看它们的结构体：</p>
+<p>假设有两个按键来源：真实引脚和测试用的假引脚。先看一个<b>完整可运行</b>的程序：不用 trait，各自写 inherent 方法，再写两份 describe。</p>
 
-<pre><code>struct RealPin { pin: u8 }
-struct FakePin { pressed: bool }</code></pre>
+<pre><code>// 两个按键来源：真实引脚、测试假引脚
+struct RealPin {
+    pin: u8,
+}
 
-<p>如果直接写描述逻辑，很容易复制两份：</p>
+struct FakePin {
+    pressed: bool,
+}
 
-<pre><code>fn describe_real(pin: &amp;RealPin) -&gt; &amp;'static str {
+// 先不用 trait：各自写 inherent 方法
+impl RealPin {
+    fn is_pressed(&amp;self) -&gt; bool {
+        self.pin == 15 // 模拟：引脚 15 按下
+    }
+}
+
+impl FakePin {
+    fn is_pressed(&amp;self) -&gt; bool {
+        self.pressed
+    }
+}
+
+// 两份函数体一模一样，只有参数类型不同
+fn describe_real(pin: &amp;RealPin) -&gt; &amp;'static str {
     if pin.is_pressed() { "pressed" } else { "released" }
 }
 
 fn describe_fake(pin: &amp;FakePin) -&gt; &amp;'static str {
     if pin.is_pressed() { "pressed" } else { "released" }
+}
+
+fn main() {
+    let real = RealPin { pin: 15 };
+    let fake = FakePin { pressed: false };
+    println!("real: {}", describe_real(&amp;real));
+    println!("fake: {}", describe_fake(&amp;fake));
 }</code></pre>
 
-<p class="meta">这两份函数假设两个类型已经有 <code>is_pressed</code> 方法；下一段用 trait 正式把这份能力写出来。</p>
+<p>预期输出：</p>
+
+<pre><code>real: pressed
+fake: released</code></pre>
+
+<p>这段程序在做什么：</p>
+<ul>
+  <li><code>RealPin</code> / <code>FakePin</code> 各自保存自己的数据；<code>impl RealPin</code> / <code>impl FakePin</code> 给它们各自加了一个 inherent 方法。</li>
+  <li><code>describe_real</code> 和 <code>describe_fake</code> 的函数体完全一样，只有参数类型不同。</li>
+  <li><code>main</code> 创建两个值，分别调用两份函数；输出相同格式。</li>
+</ul>
 
 <p>函数体一模一样，只有参数类型不同。C 里要么复制，要么用 <code>void*</code> + 函数指针；Rust 的选择是：先给这种能力起个名字，再让两个类型分别承诺实现它。</p>
 
 <h3>1.2 trait 定义与 impl</h3>
 
+<p>把上面两个 inherent <code>impl</code> 删掉，改成 trait 实现。下面是新的完整程序：</p>
+
 <pre><code>trait ButtonInput {
     fn is_pressed(&amp;self) -&gt; bool;
+}
+
+struct RealPin {
+    pin: u8,
+}
+
+struct FakePin {
+    pressed: bool,
 }
 
 impl ButtonInput for RealPin {
@@ -172,7 +229,21 @@ impl ButtonInput for FakePin {
     fn is_pressed(&amp;self) -&gt; bool {
         self.pressed
     }
+}
+
+fn main() {
+    let real = RealPin { pin: 15 };
+    let fake = FakePin { pressed: false };
+    println!("real: {}", real.is_pressed());
+    println!("fake: {}", fake.is_pressed());
 }</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>real: true
+fake: false</code></pre>
+
+<p>两份 <code>describe_*</code> 函数已经删掉了；下一节用泛型只写一份。先记住这个 trait 版本的关键点：</p>
 
 <ul>
   <li><b>trait 块只写方法签名</b>；方法体写在各自的 <code>impl</code> 里。<code>&amp;self</code> 表示只读借用；trait 方法也可以写 <code>&amp;mut self</code> 或 <code>self</code>，接收者决定调用时是借用还是取得所有权。</li>
@@ -204,16 +275,45 @@ impl ButtonInput for FakePin {
 
 <h3>2.1 写一次，服务多种类型</h3>
 
-<p>有了契约，<code>describe</code> 可以只写一份：</p>
+<p>有了契约，<code>describe</code> 可以只写一份。下面是完整程序（trait、结构体、impl、泛型函数、main 都在）：</p>
 
-<pre><code>fn describe&lt;B: ButtonInput&gt;(button: &amp;B) -&gt; &amp;'static str {
+<pre><code>trait ButtonInput {
+    fn is_pressed(&amp;self) -&gt; bool;
+}
+
+struct RealPin { pin: u8 }
+struct FakePin { pressed: bool }
+
+impl ButtonInput for RealPin {
+    fn is_pressed(&amp;self) -&gt; bool { self.pin == 15 }
+}
+impl ButtonInput for FakePin {
+    fn is_pressed(&amp;self) -&gt; bool { self.pressed }
+}
+
+fn describe&lt;B: ButtonInput&gt;(button: &amp;B) -&gt; &amp;'static str {
     if button.is_pressed() { "pressed" } else { "released" }
+}
+
+fn main() {
+    let real = RealPin { pin: 15 };
+    let fake = FakePin { pressed: false };
+    println!("real: {}", describe(&amp;real));
+    println!("fake: {}", describe(&amp;fake));
 }</code></pre>
 
+<p>预期输出：</p>
+
+<pre><code>real: pressed
+fake: released</code></pre>
+
+<p>逐行看关键部分：</p>
 <ul>
-  <li><code>&lt;B&gt;</code> 是<b>类型参数</b>（type parameter）：调用时才填入具体类型。</li>
+  <li><code>fn describe&lt;B: ButtonInput&gt;</code>：<code>B</code> 是<b>类型参数</b>（type parameter），调用时才填入具体类型。</li>
   <li><code>: ButtonInput</code> 是<b>约束</b>（bound）：告诉编译器“这个 <code>B</code> 保证实现了 <code>ButtonInput</code>”。</li>
-  <li>函数体里能调用 <code>button.is_pressed()</code>，唯一依据就是 bound；bound 是编译期的能力清单，不是运行期检查。</li>
+  <li><code>button: &amp;B</code>：参数是“指向某个 B 的引用”；B 的具体类型由调用点决定。</li>
+  <li><code>button.is_pressed()</code>：能调用它，唯一依据就是 bound；bound 是编译期的能力清单，不是运行期检查。</li>
+  <li><code>main</code> 里两次调用传入不同具体类型，触发两次单态化；下一节展开。</li>
 </ul>
 
 <p>类型链：</p>
@@ -225,7 +325,14 @@ impl ButtonInput for FakePin {
 
 <h3>2.2 去掉 bound 会发生什么</h3>
 
-<p>把签名改成 <code>fn describe&lt;B&gt;(button: &amp;B)</code>，再调用 <code>button.is_pressed()</code>，编译器在<b>编译期</b>就拒绝：</p>
+<p>把 2.1 完整程序里的签名只改一处：删掉 <code>: ButtonInput</code>。</p>
+
+<pre><code>// 其他代码不变，只改这一行
+fn describe&lt;B&gt;(button: &amp;B) -&gt; &amp;'static str {
+    if button.is_pressed() { "pressed" } else { "released" }
+}</code></pre>
+
+<p>重新编译，编译器在<b>编译期</b>就拒绝：</p>
 
 <div class="errpair">
   <div>
@@ -264,40 +371,9 @@ help: ... restrict type parameter `B` with trait `ButtonInput`</code></pre>
 </ul>
 
 <div class="callout teacher">
-  <b>探针 A：</b>把下面完整程序存成 <code>trait_demo.rs</code>，运行一次；然后删掉 <code>: ButtonInput</code>，重新编译，观察 E0599；最后把 bound 加回去。<br>
-  <code>rustc trait_demo.rs -o trait_demo.exe &amp;&amp; ./trait_demo.exe</code>
+  <b>探针 A：</b>把 2.1 的完整程序存成 <code>trait_demo.rs</code>，运行一次；然后只改 <code>describe</code> 的签名，删掉 <code>: ButtonInput</code>，重新编译观察 E0599；最后把 bound 加回去。<br>
+  <code>rustc --edition 2021 trait_demo.rs -o trait_demo.exe &amp;&amp; ./trait_demo.exe</code>
 </div>
-
-<pre><code>trait ButtonInput {
-    fn is_pressed(&amp;self) -&gt; bool;
-}
-
-struct RealPin { pin: u8 }
-struct FakePin { pressed: bool }
-
-impl ButtonInput for RealPin {
-    fn is_pressed(&amp;self) -&gt; bool { self.pin == 15 }
-}
-
-impl ButtonInput for FakePin {
-    fn is_pressed(&amp;self) -&gt; bool { self.pressed }
-}
-
-fn describe&lt;B: ButtonInput&gt;(button: &amp;B) -&gt; &amp;'static str {
-    if button.is_pressed() { "pressed" } else { "released" }
-}
-
-fn main() {
-    let real = RealPin { pin: 15 };
-    let fake = FakePin { pressed: false };
-    println!("real: {}", describe(&amp;real));
-    println!("fake: {}", describe(&amp;fake));
-}</code></pre>
-
-<p>预期输出：</p>
-
-<pre><code>real: pressed
-fake: released</code></pre>
 
 <div class="quiz" data-quiz="1">
   <h3>练习 2</h3>
@@ -347,51 +423,83 @@ impl ButtonInput for FakePin {
 
 <h2>3. trait object：运行期装箱</h2>
 
-<h3>3.1 &amp;dyn：借用一个 trait object</h3>
+<h3>3.1 完整程序：&amp;dyn 与 Box&lt;dyn&gt;</h3>
 
-<p>同一份契约，第二种用法是把具体类型擦掉：</p>
+<p>同一份契约，第二种用法是把具体类型擦掉。下面是一个完整程序：上半段用 <code>&amp;dyn</code>，下半段用 <code>Box&lt;dyn&gt;</code>；先整体运行，再拆开看。</p>
 
-<pre><code>fn describe_dyn(button: &amp;dyn ButtonInput) -&gt; &amp;'static str {
+<pre><code>trait ButtonInput {
+    fn is_pressed(&amp;self) -&gt; bool;
+}
+
+struct RealPin { pin: u8 }
+struct FakePin { pressed: bool }
+
+impl ButtonInput for RealPin {
+    fn is_pressed(&amp;self) -&gt; bool { self.pin == 15 }
+}
+impl ButtonInput for FakePin {
+    fn is_pressed(&amp;self) -&gt; bool { self.pressed }
+}
+
+fn describe_dyn(button: &amp;dyn ButtonInput) -&gt; &amp;'static str {
     if button.is_pressed() { "pressed" } else { "released" }
+}
+
+fn main() {
+    let real = RealPin { pin: 15 };
+    let fake = FakePin { pressed: false };
+
+    // 1) &amp;dyn：借用的 trait object，可放不同具体类型
+    let inputs: Vec&lt;&amp;dyn ButtonInput&gt; = vec![&amp;real, &amp;fake];
+    for input in inputs {
+        println!("dyn: {}", describe_dyn(input));
+    }
+
+    // 2) Box&lt;dyn&gt;：拥有堆上的 trait object
+    let boxed: Box&lt;dyn ButtonInput&gt; = Box::new(RealPin { pin: 3 });
+    println!("boxed.is_pressed() = {}", boxed.is_pressed());
+    println!("boxed describe = {}", describe_dyn(boxed.as_ref()));
 }</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>dyn: pressed
+dyn: released
+boxed.is_pressed() = false
+boxed describe = released</code></pre>
+
+<h3>3.2 &amp;dyn：借用一个 trait object</h3>
+
+<p>先看完整程序里的第一段：</p>
+
+<pre><code>let inputs: Vec&lt;&amp;dyn ButtonInput&gt; = vec![&amp;real, &amp;fake];
+for input in inputs {
+    println!("dyn: {}", describe_dyn(input));
+}</code></pre>
+
+<p class="meta">这是完整程序里的片段；<code>real</code>、<code>fake</code>、<code>describe_dyn</code> 都在上面定义。</p>
 
 <ul>
   <li><code>dyn ButtonInput</code> 读作“某个实现了 <code>ButtonInput</code> 的具体类型，但具体是谁运行期才知道”。这叫 <b>trait object</b>（trait 对象）。</li>
   <li><code>dyn ButtonInput</code> 是<b>未定长</b>（unsized）的，不能直接当局部变量；必须放在指针后面：<code>&amp;dyn ButtonInput</code> 或 <code>Box&lt;dyn ButtonInput&gt;</code>。</li>
   <li><code>&amp;dyn ButtonInput</code> 只借用，不拥有堆上的值；调用时通过函数表找到具体实现。</li>
+  <li><b>异构集合</b>：泛型函数的一个 <code>B</code> 只能是一个具体类型；<code>Vec&lt;B&gt;</code> 里不能同时放 <code>RealPin</code> 和 <code>FakePin</code>。但 <code>Vec&lt;&amp;dyn ButtonInput&gt;</code> 可以；每个元素都是“数据指针 + 函数表指针”。</li>
 </ul>
-
-<h3>3.2 为什么需要它：异构集合</h3>
-
-<p>泛型函数的一个 <code>B</code> 只能是一个具体类型；<code>Vec&lt;B&gt;</code> 里不能同时放 <code>RealPin</code> 和 <code>FakePin</code>。trait object 可以：</p>
-
-<pre><code>let real = RealPin { pin: 15 };
-let fake = FakePin { pressed: false };
-
-let inputs: Vec&lt;&amp;dyn ButtonInput&gt; = vec![&amp;real, &amp;fake];
-for input in inputs {
-    println!("{}", describe_dyn(input));
-}</code></pre>
-
-<p>预期输出：</p>
-
-<pre><code>pressed
-released</code></pre>
-
-<p><code>Vec&lt;&amp;dyn ButtonInput&gt;</code> 里每个元素都是“数据指针 + 函数表指针”，具体类型可以不同；这就是动态分发换来的灵活性。</p>
 
 <h3>3.3 Box&lt;dyn&gt;：拥有一个 trait object</h3>
 
-<p><code>&amp;dyn</code> 借用，生命周期受外部值限制；需要<b>拥有</b>一个 trait object 时，用 <code>Box&lt;dyn Trait&gt;</code>。接着上面的 <code>ButtonInput</code>、<code>RealPin</code> 和 <code>describe_dyn</code>：</p>
+<p><code>&amp;dyn</code> 借用，生命周期受外部值限制；需要<b>拥有</b>一个 trait object 时，用 <code>Box&lt;dyn Trait&gt;</code>。看完整程序的后半段：</p>
 
 <pre><code>let boxed: Box&lt;dyn ButtonInput&gt; = Box::new(RealPin { pin: 3 });
+println!("boxed.is_pressed() = {}", boxed.is_pressed());
+println!("boxed describe = {}", describe_dyn(boxed.as_ref()));</code></pre>
 
-println!("{}", boxed.is_pressed());          // false：方法调用自动解引用
-println!("{}", describe_dyn(boxed.as_ref())); // released：显式取 &amp;dyn</code></pre>
+<p class="meta">这是完整程序里的片段；<code>ButtonInput</code>、<code>RealPin</code>、<code>describe_dyn</code> 都在 3.1 定义。</p>
 
 <ul>
   <li><code>Box::new(value)</code> 把值放到堆上；<code>Box</code> 拥有它，离开作用域时通过 Drop 释放。你第一课学的所有权在这里照常生效。</li>
   <li><code>Box&lt;dyn ButtonInput&gt;</code> 是一个<b>胖指针</b>：一个数据指针 + 一个函数表指针；它指向堆上的具体值，但编译期不知道具体类型。</li>
+  <li><b>编译期 vs 运行期</b>：编译期确定 vtable、生成构造胖指针的代码；运行期执行到 coercion 点才组装数据指针 + vtable 指针。</li>
   <li>方法调用会自动解引用（<code>boxed.is_pressed()</code> 可以）；把 <code>&amp;Box&lt;dyn T&gt;</code> 传给 <code>&amp;dyn T</code> 参数时要显式解引用：<code>boxed.as_ref()</code> 或 <code>&amp;**boxed</code>。</li>
   <li>尺寸（本机 x86_64 实测，不是跨平台语言保证）：<code>Box&lt;RealPin&gt;</code> 是 8 字节（细指针）；<code>&amp;dyn ButtonInput</code>、<code>Box&lt;dyn ButtonInput&gt;</code>、<code>&amp;[u8]</code> 都是 16 字节（胖指针）。第三课的切片是“地址 + 长度”，trait object 是“地址 + 函数表”。</li>
 </ul>
@@ -413,7 +521,7 @@ println!("{}", describe_dyn(boxed.as_ref())); // released：显式取 &amp;dyn</
 </ul>
 
 <div class="callout teacher">
-  <b>探针：</b>把 3.2 的代码补上 <code>ButtonInput</code> 的 trait 和两个 impl，存成 <code>dyn_demo.rs</code>，运行 <code>rustc dyn_demo.rs -o dyn_demo.exe &amp;&amp; ./dyn_demo.exe</code>，确认输出 <code>pressed</code> / <code>released</code>。CP1 会要这个输出。
+  <b>探针：</b>把 3.1 的完整程序存成 <code>dyn_demo.rs</code>，运行 <code>rustc --edition 2021 dyn_demo.rs -o dyn_demo.exe &amp;&amp; ./dyn_demo.exe</code>，确认输出 <code>dyn: pressed</code> / <code>dyn: released</code> / Box 两行。CP1 会要这个输出。
 </div>
 
 <div class="quiz" data-quiz="3">
@@ -450,9 +558,18 @@ println!("{}", describe_dyn(boxed.as_ref())); // released：显式取 &amp;dyn</
     // 默认方法由标准库提供，实现者通常不用写
 }</code></pre>
 
-<p>这叫 <b>supertrait</b>（超级 trait）：<code>Error</code> 的契约里写着 <code>Debug + Display</code>，所以实现 <code>Error</code> 之前必须先有这两个。上面是简化签名；errors5 文件顶部已有 <code>use std::error::Error;</code> 和 <code>use std::fmt;</code>，并且已经给你写好了 <code>Display</code>：</p>
+<p>这叫 <b>supertrait</b>（超级 trait）：<code>Error</code> 的契约里写着 <code>Debug + Display</code>，所以实现 <code>Error</code> 之前必须先有这两个。上面是简化签名；errors5 的 <code>CreationError</code> 是 enum，下面是一个完整的对应程序：</p>
 
-<pre><code>impl fmt::Display for CreationError {
+<pre><code>use std::error::Error;
+use std::fmt;
+
+#[derive(Debug)]                 // 满足 Debug
+enum CreationError {
+    Negative,
+    Zero,
+}
+
+impl fmt::Display for CreationError {   // 满足 Display
     fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
         let description = match self {
             CreationError::Negative =&gt; "number is negative",
@@ -462,12 +579,26 @@ println!("{}", describe_dyn(boxed.as_ref())); // released：显式取 &amp;dyn</
     }
 }
 
-impl Error for CreationError {}</code></pre>
+impl Error for CreationError {}  // Debug + Display 已满足，空 impl 即可
+
+fn main() {
+    for e in [CreationError::Negative, CreationError::Zero] {
+        println!("Display: {}", e);
+        println!("Debug: {:?}", e);
+    }
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>Display: number is negative
+Debug: Negative
+Display: number is zero
+Debug: Zero</code></pre>
 
 <ul>
   <li><code>fmt::Formatter</code> 是输出缓冲区，<code>fmt::Result</code> 是格式化结果；这段是标准库格式化的固定写法，errors5 已经提供，不需要你从零设计。</li>
   <li><code>impl Error for CreationError {}</code> 是空 impl：<code>Error</code> 的默认方法由标准库提供；只要 <code>Debug + Display</code> 已经满足，空 impl 就表示“承诺实现这份契约”。</li>
-  <li>如果缺 <code>Display</code>，连 <code>impl Error</code> 都过不了。实测报错：</li>
+  <li>如果缺 <code>Display</code>，连 <code>impl Error</code> 都过不了。把上面的 <code>impl fmt::Display</code> 整段删掉，重新编译，实测报错：</li>
 </ul>
 
 <div class="errpair">
@@ -496,28 +627,51 @@ note: required by a bound in `std::error::Error`</code></pre>
 
 <h3>4.4 From：? 背后的转换 trait</h3>
 
-<p><code>From</code> 的方向很容易说反。假设 <code>MacError</code> 已经增加了一个 <code>BadNumber(ParseIntError)</code> 变体（errors6 会用同样的模式包 <code>ParseIntError</code>）：</p>
+<p><code>From</code> 的方向很容易说反。假设 <code>MacError</code> 已经增加了一个 <code>BadNumber(ParseIntError)</code> 变体（errors6 会用同样的模式包 <code>ParseIntError</code>）。下面是一个完整程序：</p>
 
 <pre><code>use std::num::ParseIntError;
+
+#[derive(Debug)]
+enum MacError {
+    // 真实 WoL 还有 Length / NonHex；这里只保留演示所需变体
+    BadNumber(ParseIntError),
+}
 
 impl From&lt;ParseIntError&gt; for MacError {
     fn from(e: ParseIntError) -&gt; Self {
         MacError::BadNumber(e)
     }
+}
+
+fn parse_byte(s: &amp;str) -&gt; Result&lt;u8, MacError&gt; {
+    let n = s.parse::&lt;u8&gt;()?; // 失败时 ParseIntError -&gt; MacError
+    Ok(n)
+}
+
+fn main() {
+    println!("{:?}", parse_byte("255")); // Ok(255)
+
+    match parse_byte("FF") {
+        Ok(n) =&gt; println!("Ok({n})"),
+        // "FF" 默认按十进制 parse，会得到 InvalidDigit
+        Err(MacError::BadNumber(e)) =&gt; println!("BadNumber({:?})", e.kind()),
+    }
 }</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>Ok(255)
+BadNumber(InvalidDigit)</code></pre>
 
 <p>这表示 <b><code>ParseIntError</code> → <code>MacError</code></b>。当函数的返回错误是 <code>MacError</code>，而 <code>?</code> 拿到的是 <code>ParseIntError</code> 时，<code>?</code> 会执行 <code>return Err(MacError::from(e))</code>。转换不了就是编译期错误，不是运行期失败。</p>
 
-<p>对照你现在的 WoL：<code>parse_mac</code> 用的是</p>
-
-<pre><code>bytes[i] = u8::from_str_radix(part, 16)
-    .map_err(|_| MacError::NonHex)?;</code></pre>
+<p>对照你现在的 WoL：<code>parse_mac</code> 在 <a href="../demo/wol/src/protocol.rs">protocol.rs</a> 里用的是 <code>u8::from_str_radix(part, 16).map_err(|_| MacError::NonHex)?</code>；完整函数见项目文件，这里不贴半截代码。</p>
 
 <p><code>map_err</code> 是<b>手动转换</b>：在调用点把 <code>ParseIntError</code> 变成 <code>MacError::NonHex</code>，然后 <code>?</code> 看到的已经是同一种错误类型。它简单、能选择变体，但每处都要写。<code>From</code> 是<b>集中转换</b>：实现一次，<code>?</code> 自动调用。errors6 会让你把 <code>ParseIntError</code> 包进自定义错误的一个变体里，既保留原因，又能在 <code>From</code> 或 <code>map_err</code> 里集中转换。</p>
 
 <h3>4.5 Termination：main 的返回类型</h3>
 
-<p><code>main</code> 的返回类型必须实现 <code>Termination</code>。<code>()</code> 实现了；<code>Result&lt;(), E: Debug&gt;</code> 也实现了。于是：</p>
+<p><code>main</code> 的返回类型必须实现 <code>Termination</code>。<code>()</code> 实现了；<code>Result&lt;(), E&gt;</code> 在 <code>E: Debug</code> 时也实现了。于是：</p>
 
 <ul>
   <li><code>Ok(())</code>：程序正常结束，退出码 0。</li>
@@ -527,16 +681,54 @@ impl From&lt;ParseIntError&gt; for MacError {
 
 <h3>4.6 errors5 的完整模式</h3>
 
-<p>把上面的东西拼起来（<code>PositiveNonzeroInteger</code> 是 errors5 里的结构体；这里只展示 <code>main</code> 的返回类型与 <code>?</code>）：</p>
+<p>把上面的东西拼起来，得到一个完整程序（<code>PositiveNonzeroInteger</code> 的类型定义也在里面）：</p>
 
 <pre><code>use std::error::Error;
+use std::fmt;
+
+#[derive(Debug)]
+enum CreationError {
+    Negative,
+    Zero,
+}
+
+impl fmt::Display for CreationError {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter) -&gt; fmt::Result {
+        let description = match self {
+            CreationError::Negative =&gt; "number is negative",
+            CreationError::Zero =&gt; "number is zero",
+        };
+        f.write_str(description)
+    }
+}
+
+impl Error for CreationError {}
+
+#[allow(dead_code)] // 单独运行时字段只用于 Debug；errors5 的测试会读它
+#[derive(Debug)]
+struct PositiveNonzeroInteger(u64);
+
+impl PositiveNonzeroInteger {
+    fn new(value: i64) -&gt; Result&lt;Self, CreationError&gt; {
+        match value {
+            x if x &lt; 0 =&gt; Err(CreationError::Negative),
+            0 =&gt; Err(CreationError::Zero),
+            x =&gt; Ok(Self(x as u64)),
+        }
+    }
+}
 
 fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
-    let input = "42"; // errors5 里是 pretend_user_input
+    let input = "42"; // 改成 "-5" 或 "abc" 复现另外两行
     let x: i64 = input.parse()?;
     println!("output={:?}", PositiveNonzeroInteger::new(x)?);
     Ok(())
 }</code></pre>
+
+<p>用 <code>input = "42"</code> 运行，预期输出：</p>
+
+<pre><code>output=PositiveNonzeroInteger(42)
+exit=0</code></pre>
 
 <ul>
   <li><code>input.parse::&lt;i64&gt;()</code> 失败时产生 <code>ParseIntError</code>；<code>?</code> 通过标准库的 <code>From&lt;E&gt; for Box&lt;dyn Error&gt;</code> 把它装箱。</li>
@@ -573,7 +765,7 @@ fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
 
 <p>运行：</p>
 
-<pre><code>rustc box_error.rs -o box_error.exe &amp;&amp; ./box_error.exe; echo "exit=$?"</code></pre>
+<pre><code>rustc --edition 2021 box_error.rs -o box_error.exe &amp;&amp; ./box_error.exe; echo "exit=$?"</code></pre>
 
 <p>预期：</p>
 
@@ -619,25 +811,150 @@ exit=1</code></pre>
 
 <p>关系是 <code>Fn: FnMut</code>、<code>FnMut: FnOnce</code>：能当 <code>Fn</code> 用的闭包，也能当 <code>FnMut</code> 和 <code>FnOnce</code> 用；反过来不成立。这和 <code>Error: Debug + Display</code> 是同一种 supertrait 结构。</p>
 
-<h3>5.1 FnMut：修改捕获值，多次调用</h3>
+<h3>5.1 先只玩闭包：定义、捕获、调用</h3>
 
-<pre><code>fn call_twice&lt;F: FnMut() -&gt; u32&gt;(mut f: F) -&gt; (u32, u32) {
-    (f(), f())
+<p>先不看泛型，只把一个计数器闭包跑起来。注意：<b>定义闭包时闭包体不执行</b>。</p>
+
+<pre><code>fn main() {
+    let mut n: u32 = 0;          // n 可变，初始 0
+    let mut inc = || {           // 定义闭包；此时不执行
+        n += 1;                  // 调用时：修改捕获的 n
+        n                        // 尾表达式：返回加完后的 n
+    };
+
+    println!("first: {}", inc());   // 1
+    println!("second: {}", inc());  // 2
+    println!("n = {n}");            // 2
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>first: 1
+second: 2
+n = 2</code></pre>
+
+<ul>
+  <li><code>||</code> 是空参数列表；闭包体是一个代码块，可以有语句和尾表达式。</li>
+  <li><code>n += 1;</code> 是语句，分号把它的值（<code>()</code>）丢掉；最后的 <code>n</code> 没有分号，是尾表达式，它的值就是闭包的返回值。写成 <code>n;</code> 就返回 <code>()</code> 了。</li>
+  <li>闭包修改了捕获的 <code>n</code>，所以按<b>可变借用</b>捕获 <code>n</code>，不是复制。调用 <code>inc()</code> 改的是外面的 <code>n</code>。</li>
+  <li>定义 <code>inc</code> 时闭包体不执行，<code>n</code> 还是 0；只有调用 <code>inc()</code> 才执行。</li>
+  <li>两个 <code>mut</code> 各管各的：<code>mut n</code> 让闭包能改 <code>n</code>；<code>mut inc</code> 让调用者能可变借用闭包。</li>
+  <li><code>inc</code> 的类型不是 <code>u32</code>，而是一个匿名闭包类型，实现 <code>FnMut() -&gt; u32</code>（也实现 <code>FnOnce</code>）。</li>
+</ul>
+
+<table>
+  <tr><th>步骤</th><th><code>n</code></th><th><code>inc()</code> 返回</th></tr>
+  <tr><td><code>let mut n = 0</code></td><td>0</td><td>—</td></tr>
+  <tr><td><code>let mut inc = ...</code></td><td>0</td><td>—（定义不执行）</td></tr>
+  <tr><td>第一次 <code>inc()</code></td><td>1</td><td>1</td></tr>
+  <tr><td>第二次 <code>inc()</code></td><td>2</td><td>2</td></tr>
+  <tr><td><code>println!("n = {n}")</code></td><td>2</td><td>—</td></tr>
+</table>
+
+<h3>5.2 Fn：不修改捕获，先看懂泛型 call_twice</h3>
+
+<p>先用一个不修改捕获的闭包，把 <code>call_twice</code> 的泛型签名和元组返回拆开：</p>
+
+<pre><code>fn call_twice&lt;F: Fn() -&gt; u32&gt;(f: F) -&gt; (u32, u32) {
+    let first = f();     // 第一次调用
+    let second = f();    // 第二次调用
+    (first, second)      // 返回元组
 }
 
 fn main() {
-    let mut n = 0;
-    let mut inc = || { n += 1; n };
-    println!("{:?}", call_twice(&amp;mut inc)); // (1, 2)
+    let f = || 7;                 // 没有捕获，实现 Fn
+    let pair = call_twice(f);
+    println!("{pair:?}");         // (7, 7)
 }</code></pre>
 
+<p>预期输出：</p>
+
+<pre><code>(7, 7)</code></pre>
+
 <ul>
-  <li><code>inc</code> 修改了捕获的 <code>n</code>，所以它不能实现 <code>Fn</code>（<code>Fn</code> 只允许 <code>&amp;self</code>）。</li>
-  <li>它能被多次调用，所以是 <code>FnMut</code>；<code>call_twice</code> 的参数写 <code>F: FnMut</code>，并且 <code>f</code> 要声明成 <code>mut</code>，因为调用时需要 <code>&amp;mut self</code>。</li>
-  <li><code>&amp;mut inc</code> 作为实参：<code>&amp;mut F</code> 在 <code>F: FnMut</code> 时也实现 <code>FnMut</code>；这样 <code>inc</code> 之后还能继续用。</li>
+  <li><code>&lt;F: Fn() -&gt; u32&gt;</code>：<code>F</code> 是类型参数；约束读作“F 可被 <code>&amp;self</code> 调用，没有参数，返回 <code>u32</code>”。</li>
+  <li><code>f: F</code>：这里没有 <code>mut</code>，因为 <code>Fn</code> 调用只需要 <code>&amp;self</code>。</li>
+  <li><code>-&gt; (u32, u32)</code>：返回一个二元组；<code>(first, second)</code> 是元组表达式，不是函数调用。</li>
+  <li>为什么写 <code>let first</code> / <code>let second</code>：把执行顺序拆开，先第一次，再第二次；不要用一行元组隐藏步骤。</li>
 </ul>
 
-<h3>5.2 FnOnce：消费捕获值，只能调用一次</h3>
+<h3>5.3 FnMut：修改捕获，多次调用</h3>
+
+<p>现在把计数器闭包传给需要 <code>FnMut</code> 的 <code>call_twice</code>：</p>
+
+<pre><code>fn call_twice&lt;F: FnMut() -&gt; u32&gt;(mut f: F) -&gt; (u32, u32) {
+    let first = f();     // n 0 -&gt; 1，返回 1
+    let second = f();    // n 1 -&gt; 2，返回 2
+    (first, second)
+}
+
+fn main() {
+    let mut n: u32 = 0;
+    let mut inc = || {
+        n += 1;
+        n
+    };
+
+    let pair = call_twice(&amp;mut inc);
+    println!("pair = {pair:?}");          // (1, 2)
+    println!("inc() again = {}", inc());   // 3
+}</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>pair = (1, 2)
+inc() again = 3</code></pre>
+
+<ul>
+  <li><b>为什么 <code>mut f</code></b>：<code>FnMut</code> 调用需要 <code>&amp;mut self</code>；<code>f</code> 是函数持有的闭包（这里是 <code>&amp;mut inc</code>），必须声明为可变。</li>
+  <li><b>为什么 <code>mut inc</code></b>：闭包捕获 <code>n</code> 并会修改；调用点必须能可变借用这个闭包。</li>
+  <li><b>为什么 <code>&amp;mut inc</code></b>：<code>call_twice</code> 按值接收 <code>F</code>；传 <code>&amp;mut inc</code> 让 <code>F = &amp;mut 闭包</code>，函数借用它，返回后 <code>inc</code> 仍可用。传 <code>inc</code> 会把闭包移动进去，之后不能再用 <code>inc</code>（E0382）。</li>
+  <li>两个 <code>mut</code> 不是重复：一个在调用者（<code>inc</code>），一个在被调用函数（<code>f</code>）。</li>
+  <li>原课件把函数体写成 <code>(f(), f())</code>；这里展开成 <code>let first</code> / <code>let second</code>，执行顺序一眼可见。</li>
+</ul>
+
+<table>
+  <tr><th>步骤</th><th><code>n</code></th><th><code>f()</code> 返回</th><th>说明</th></tr>
+  <tr><td>进入 <code>call_twice</code></td><td>0</td><td>—</td><td><code>f</code> 是 <code>&amp;mut inc</code></td></tr>
+  <tr><td><code>first = f()</code></td><td>1</td><td>1</td><td>第一次执行闭包</td></tr>
+  <tr><td><code>second = f()</code></td><td>2</td><td>2</td><td>第二次执行</td></tr>
+  <tr><td>返回 <code>(first, second)</code></td><td>2</td><td>—</td><td>元组 <code>(1, 2)</code></td></tr>
+  <tr><td>返回后再次 <code>inc()</code></td><td>3</td><td>3</td><td><code>inc</code> 仍然可用</td></tr>
+</table>
+
+<div class="errpair" id="fnmut-errors">
+  <div>
+    <b>去掉 <code>mut f</code></b>
+    <pre><code>error[E0596]: cannot borrow `f` as mutable, as it is not declared as mutable</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li>不能把 <code>f</code> 当作可变借用，因为它没有声明为可变。</li>
+      <li><code>FnMut</code> 调用需要 <code>&amp;mut self</code>；参数要写 <code>mut f</code>。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="errpair">
+  <div>
+    <b>去掉 <code>mut inc</code></b>
+    <pre><code>error[E0596]: cannot borrow `inc` as mutable, as it is not declared as mutable</code></pre>
+  </div>
+  <div class="zh">
+    <b>中文对照</b>
+    <ul>
+      <li>不能把 <code>inc</code> 当作可变借用，因为它没有声明为可变。</li>
+      <li>闭包捕获了 <code>n</code> 并会修改它；调用点要写 <code>let mut inc</code>。</li>
+    </ul>
+  </div>
+</div>
+
+<pre><code>inc: {匿名闭包类型} : FnMut() -&gt; u32
+&amp;mut inc: &amp;mut {匿名闭包类型}
+F = &amp;mut {匿名闭包类型}</code></pre>
+
+<h3>5.4 FnOnce：消费捕获值，只能调用一次</h3>
 
 <pre><code>fn consume&lt;F: FnOnce() -&gt; String&gt;(f: F) -&gt; String {
     f()
@@ -645,14 +962,19 @@ fn main() {
 
 fn main() {
     let s = String::from("hi");
-    let take = move || s;
-    println!("{}", consume(take)); // hi
+    let take = move || s;            // 把 s move 进闭包
+    println!("{}", consume(take));   // hi
     // println!("{}", consume(take)); // E0382：take 已经被移走
 }</code></pre>
+
+<p>预期输出：</p>
+
+<pre><code>hi</code></pre>
 
 <ul>
   <li><code>move || s</code> 把 <code>String</code> 的所有权移进闭包；调用 <code>f()</code> 时闭包被消费，所以它只保证一次调用，是 <code>FnOnce</code>。</li>
   <li>如果闭包只读捕获值，它可以实现 <code>Fn</code>；如果修改，至少是 <code>FnMut</code>；如果消费，只能是 <code>FnOnce</code>。</li>
+  <li>第二次 <code>consume(take)</code> 会报 E0382：<code>take</code> 已经被移走。</li>
 </ul>
 
 <p>C 锚点：C 的函数指针没有捕获环境；闭包相当于“函数指针 + 捕获的环境”。<code>Fn</code> / <code>FnMut</code> / <code>FnOnce</code> 描述调用时对这份环境是只读、可改，还是拿走所有权。</p>
@@ -702,7 +1024,7 @@ fn main() {
 
 <p><b>先读</b>：The Book 10.1–10.2、17.2；9.2 的 <code>main -&gt; Box&lt;dyn Error&gt;</code> 作为对照。10.3 生命周期跳过。读完再合上课程默写，最后对照课程修正；有偏差标“曾误→正解”。</p>
 
-<p>CP1 是一次提交：四条笔记 + 两个探针。探针是笔记的证据，不另算任务；quiz 不计入 CP1。CP2（errors4–6）和 CP3（button-model）等 CP1 通过后再发。</p>
+<p>CP1 是一次提交：四条笔记 + 两个探针。探针是笔记的证据，不另算任务；quiz 不计入 CP1。CP1–CP3 已完成：CP2 为 rustlings errors4–6，CP3 为 button-model 的 trait/泛型/动态分发集成；记录见 <a href="../my-notes/0009-traits-and-generics.md">my-notes/0009</a>、<a href="../learning-records/0009-traits-and-generics.md">learning-records/0009</a> 和 <a href="../demo/button-model/README.md">button-model README</a>。</p>
 
 <h3>笔记 1：两种分发</h3>
 <ul>
@@ -734,7 +1056,7 @@ fn main() {
 
 <h3>探针 A / B</h3>
 <ol>
-  <li><b>探针 A</b>：把第 2 节的泛型示例存成 <code>trait_demo.rs</code>，运行并贴 <code>real: pressed</code> / <code>fake: released</code>；删掉 <code>: ButtonInput</code>，编译，贴 E0599 原文 + 中文对照；恢复 bound。再把第 3 节的 dyn 示例存成 <code>dyn_demo.rs</code>，贴 <code>pressed</code> / <code>released</code>。</li>
+  <li><b>探针 A</b>：把第 2 节的泛型示例存成 <code>trait_demo.rs</code>，运行并贴 <code>real: pressed</code> / <code>fake: released</code>；删掉 <code>: ButtonInput</code>，编译，贴 E0599 原文 + 中文对照；恢复 bound。再把第 3 节的完整示例存成 <code>dyn_demo.rs</code>，贴 <code>dyn: pressed</code> / <code>dyn: released</code> 和 Box 两行。</li>
   <li><b>探针 B</b>：写最小 <code>main -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt;</code>，让 <code>"abc".parse::&lt;i64&gt;()?</code> 失败；贴输出和 exit code；说明打印的是 <code>Debug</code> 还是 <code>Display</code>。</li>
 </ol>
 
@@ -759,7 +1081,7 @@ fn main() {
 <a href="https://doc.rust-lang.org/std/convert/trait.From.html" target="_blank">std::convert::From</a> · <a href="https://doc.rust-lang.org/std/fmt/trait.Debug.html" target="_blank">std::fmt::Debug</a> · <a href="https://doc.rust-lang.org/std/fmt/trait.Display.html" target="_blank">std::fmt::Display</a> · <a href="https://doc.rust-lang.org/std/error/trait.Error.html" target="_blank">std::error::Error</a> · <a href="https://doc.rust-lang.org/std/process/trait.Termination.html" target="_blank">std::process::Termination</a><br>
 <a href="https://doc.rust-lang.org/std/boxed/struct.Box.html" target="_blank">std::boxed::Box</a> · <a href="https://doc.rust-lang.org/std/ops/trait.Fn.html" target="_blank">std::ops::Fn</a> · <a href="https://doc.rust-lang.org/std/ops/trait.FnMut.html" target="_blank">FnMut</a> · <a href="https://doc.rust-lang.org/std/ops/trait.FnOnce.html" target="_blank">FnOnce</a></p>
 
-<p><b>下一课预告</b>：CP2 做 rustlings <code>errors4–6</code>（自定义错误、<code>Box&lt;dyn Error&gt;</code>、错误包装）；CP3 再把 <code>button-model</code> 加上 <code>ButtonInput</code> trait 与泛型/动态分发。之后进入生命周期与集合。</p>
+<p><b>进度</b>：CP1–CP3 已完成——CP2 的 rustlings <code>errors4–6</code> 全部通过（runner 到 <code>generics1</code>）；CP3 的 <code>button-model</code> 已加入 <code>ButtonInput</code> trait、泛型 <code>read_button</code> 与 <code>Vec&lt;&amp;dyn ButtonInput&gt;</code>，输出保持四行不变。下一课进入生命周期与集合。</p>
 
 <p><b>随时提问</b>：静态和动态怎么选、<code>Box&lt;dyn Error&gt;</code> 为什么能装不同错误、闭包为什么是 <code>FnMut</code>——直接问。我是你的老师，答疑是课程的一部分。</p>
 
